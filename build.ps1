@@ -1,6 +1,8 @@
 ﻿param([string]$Version = "")
 
 $ErrorActionPreference = "Stop"
+$env:VSLANG = "1033"
+$env:DOTNET_CLI_UI_LANGUAGE = "en"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Project = Join-Path $Root "YgpPlaytimeSync"
 $Out = Join-Path $Root "bin\Release"
@@ -22,12 +24,12 @@ try {
     $yamlPath = Join-Path $Project "extension.yaml"
     $currentVersion = ([regex]::Match([IO.File]::ReadAllText($yamlPath), '(?m)^Version:\s*(\S+)')).Groups[1].Value
     if (-not $Version) {
-        $answer = Read-Host "Versao atual: $currentVersion. Digite a versao a compilar (ex.: 0.5.2) ou Enter para manter"
+        $answer = Read-Host "Current version: $currentVersion. Enter the version to build (e.g. 0.5.2) or press Enter to keep it"
         $Version = if ($answer) { $answer } else { $currentVersion }
     }
     $Version = $Version.Trim().TrimStart('v', 'V')
-    if ($Version -notmatch '^\d+\.\d+\.\d+$') { Fail "Versao invalida: '$Version'. Use o formato 1.2.3 (ex.: 0.5.2)." }
-    Write-Host "Versao   : $Version"
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { Fail "Invalid version: '$Version'. Use the format 1.2.3 (e.g. 0.5.2)." }
+    Write-Host "Version  : $Version"
 
     function Update-VersionInFile([string]$Path, [string]$Pattern, [string]$Replacement) {
         if (-not (Test-Path $Path)) { return }
@@ -46,7 +48,7 @@ try {
     Update-VersionInFile (Join-Path $Root "README.es.md") '(badge/versi%C3%B3n-)[0-9][0-9.]*(--)' ('${1}' + $Version + '${2}')
     $changelogPath = Join-Path $Root "CHANGELOG.md"
     if ((Test-Path $changelogPath) -and -not ([IO.File]::ReadAllText($changelogPath) -match "(?m)^##\s+$([regex]::Escape($Version))\b")) {
-        Write-Host "AVISO: CHANGELOG.md nao tem uma secao '## $Version'." -ForegroundColor Yellow
+        Write-Host "WARNING: CHANGELOG.md has no '## $Version' section." -ForegroundColor Yellow
     }
 
     $vsRoots = @("${env:ProgramFiles}\Microsoft Visual Studio", "${env:ProgramFiles(x86)}\Microsoft Visual Studio") | Where-Object { Test-Path $_ }
@@ -62,7 +64,7 @@ try {
         "$env:LOCALAPPDATA\Microsoft\MSBuild\Roslyn\csc.exe"
     ) + $vsCsc
     $csc = $cscCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-    if (-not $csc) { Fail "Roslyn csc.exe não encontrado. Instale o Visual Studio Build Tools (workload .NET desktop build tools) ou defina a variável YGP_CSC com o caminho do csc.exe." }
+    if (-not $csc) { Fail "Roslyn csc.exe not found. Install the Visual Studio Build Tools (.NET desktop build tools workload) or set the YGP_CSC environment variable to the path of csc.exe." }
 
     $sdkCandidates = @(
         $(if ($env:PLAYNITE_DIR) { Join-Path $env:PLAYNITE_DIR "Playnite.SDK.dll" }),
@@ -80,12 +82,12 @@ try {
         $sdk = Get-ChildItem $env:PLAYNITE_DIR -Filter Playnite.SDK.dll -File -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1 -ExpandProperty FullName
     }
-    if (-not $sdk) { Fail "Playnite.SDK.dll não encontrado. Se o Playnite está instalado em outra pasta (versão portátil), defina a variável de ambiente PLAYNITE_DIR com essa pasta." }
+    if (-not $sdk) { Fail "Playnite.SDK.dll not found. If Playnite is installed elsewhere (portable version), set the PLAYNITE_DIR environment variable to that folder." }
 
     $shipJson = $true
     $jsonPath = Join-Path $Root "packages\Newtonsoft.Json\lib\Newtonsoft.Json.dll"
     if (-not (Test-Path $jsonPath)) {
-        Write-Host "Baixando Newtonsoft.Json 13.0.3 do NuGet (apenas na primeira vez)..."
+        Write-Host "Downloading Newtonsoft.Json 13.0.3 from NuGet (first run only)..."
         $tmpZip = Join-Path ([IO.Path]::GetTempPath()) "newtonsoft.json.13.0.3.zip"
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg" -OutFile $tmpZip -UseBasicParsing
@@ -93,7 +95,7 @@ try {
         $zip = [IO.Compression.ZipFile]::OpenRead($tmpZip)
         try {
             $entry = $zip.Entries | Where-Object { $_.FullName -eq "lib/net45/Newtonsoft.Json.dll" } | Select-Object -First 1
-            if (-not $entry) { throw "lib/net45/Newtonsoft.Json.dll não encontrado no pacote NuGet." }
+            if (-not $entry) { throw "lib/net45/Newtonsoft.Json.dll not found in the NuGet package." }
             New-Item (Split-Path $jsonPath) -ItemType Directory -Force | Out-Null
             [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $jsonPath, $true)
         } finally { $zip.Dispose(); Remove-Item $tmpZip -Force -ErrorAction SilentlyContinue }
@@ -107,7 +109,7 @@ try {
         $playniteJson = Join-Path (Split-Path -Parent $sdk) "Newtonsoft.Json.dll"
         if (Test-Path $playniteJson) { $json = $playniteJson }
     }
-    if (-not $json) { Fail "Newtonsoft.Json.dll não encontrado (pasta packages ou pasta do Playnite)." }
+    if (-not $json) { Fail "Newtonsoft.Json.dll not found (packages folder or Playnite folder)." }
 
     $refRoots = @(
         "${env:ProgramFiles(x86)}\Reference Assemblies\Microsoft\Framework\.NETFramework",
@@ -121,7 +123,7 @@ try {
     }
     if (-not $refDir) {
         $legacy = "C:\Windows\Microsoft.NET\Framework\v4.0.30319"
-        if (Test-Path $legacy) { $refDir = $legacy } else { Fail "Nenhuma referência do .NET Framework foi encontrada." }
+        if (Test-Path $legacy) { $refDir = $legacy } else { Fail "No .NET Framework reference assemblies were found." }
     }
 
     Write-Host "Compiler : $csc"
@@ -176,11 +178,11 @@ try {
         if ($found) { $frameworkRefs += $found } else { $missingRefs += $name }
     }
     if ($missingRefs.Count -gt 0) {
-        Fail "Referências do .NET Framework/WPF ausentes: $($missingRefs -join ', '). Instale o '.NET Framework 4.6.2 targeting pack' no Visual Studio Installer."
+        Fail "Missing .NET Framework/WPF references: $($missingRefs -join ', '). Install the '.NET Framework 4.6.2 targeting pack' in the Visual Studio Installer."
     }
     $refs = @($sdk, $json) + $frameworkRefs
 
-    $compilerArgs = @('/nologo','/target:library','/platform:anycpu','/optimize+','/debug:pdbonly','/langversion:7.3',"/out:$Out\YgpPlaytimeSync.dll")
+    $compilerArgs = @('/nologo','/target:library','/platform:anycpu','/optimize+','/debug:pdbonly','/langversion:7.3','/preferreduilang:en-US',"/out:$Out\YgpPlaytimeSync.dll")
     foreach ($r in $refs) { $compilerArgs += "/reference:$r" }
     $compilerArgs += $sources
 
@@ -189,15 +191,15 @@ try {
     $compileExit = $LASTEXITCODE
     $compilerOutput | ForEach-Object { Write-Host $_ }
     if ($compilerOutput) { Add-Content $Log $compilerOutput }
-    if ($compileExit -ne 0) { Fail "O compilador retornou código $compileExit." }
+    if ($compileExit -ne 0) { Fail "The compiler returned exit code $compileExit." }
 
     Copy-Item (Join-Path $Project "extension.yaml") $Out -Force
     New-Item (Join-Path $Out "Resources") -ItemType Directory -Force | Out-Null
     Copy-Item (Join-Path $Project "Resources\pluginicon.png") (Join-Path $Out "Resources\pluginicon.png") -Force
     if ($shipJson) { Copy-Item $json $Out -Force }
 
-    # Pasta limpa só com o que o Playnite precisa; é dela que o .pext é gerado
-    # (a pasta Release acumula cópias "<guid>_YgpPlaytimeSync.dll" criadas pelo Playnite em modo desenvolvedor).
+    # Clean folder with only what Playnite needs; the .pext is built from it
+    # (the Release folder accumulates "<guid>_YgpPlaytimeSync.dll" copies created by Playnite in developer mode).
     $Stage = Join-Path $Root "bin\Stage"
     if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force -ErrorAction SilentlyContinue }
     New-Item $Stage -ItemType Directory -Force | Out-Null
@@ -207,7 +209,7 @@ try {
     Copy-Item (Join-Path $Out "Resources\pluginicon.png") (Join-Path $Stage "Resources\pluginicon.png") -Force
     if ($shipJson) { Copy-Item $json $Stage -Force }
 
-    # Gera o .pext (um zip com extension.yaml na raiz) em bin\Packages.
+    # Builds the .pext (a zip with extension.yaml at its root) in bin\Packages.
     $yaml = Get-Content (Join-Path $Project "extension.yaml") -Raw
     $extId = ([regex]::Match($yaml, '(?m)^Id:\s*(\S+)')).Groups[1].Value
     $extVer = $Version

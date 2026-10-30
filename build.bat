@@ -1,5 +1,8 @@
 @echo off
 setlocal EnableExtensions
+set "DOTNET_CLI_UI_LANGUAGE=en"
+set "VSLANG=1033"
+set "PreferredUILang=en-US"
 cd /d "%~dp0"
 
 set "CONFIG=Release"
@@ -78,5 +81,8 @@ set "RC=1"
 
 :end
 echo.
-if /i not "%~1"=="nopause" pause
+if /i "%~1"=="nopause" goto :exit
+echo Press any key to continue . . .
+pause >nul
+:exit
 exit /b %RC%
