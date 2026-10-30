@@ -124,3 +124,4 @@ The plugin is free to use. The source code is not published at this time; this r
 ## Credits
 
 Built for [Playnite](https://playnite.link/). Thanks to everyone testing the beta.
+

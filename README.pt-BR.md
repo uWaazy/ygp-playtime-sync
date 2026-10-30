@@ -123,3 +123,4 @@ O plugin é gratuito. O código-fonte não está publicado por enquanto; este re
 ## Créditos
 
 Feito para o [Playnite](https://playnite.link/). Obrigado a todos que estão testando o beta.
+
