@@ -1,0 +1,13 @@
+
+AddonId: 3f5a006a-a508-4be7-b83d-05e30830abe3
+
+Packages:
+  - Version: 0.5.0
+    RequiredApiVersion: 5.0.0
+    ReleaseDate: 2026-10-30
+    PackageUrl: https://github.com/uWaazy/ygp-playtime-sync/releases/download/v0.5.0/ygp-playtime-sync-v0.5.0.pext
+    Changelog:
+      - First public beta release.
+      - Added Creator Profile card and language selection.
+      - Added automatic completion date and recent games synchronization.
+      - Reorganized the game's context menu.
