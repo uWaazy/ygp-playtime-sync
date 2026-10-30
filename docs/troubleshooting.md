@@ -1,33 +1,31 @@
-# Solução de problemas
+# Troubleshooting
 
-Logs do Playnite: **Menu → Configurações → Geral → Abrir pasta de logs** (`extensions.log`). Procure linhas que começam com `[YGP]`.
+Playnite logs: **Menu → Settings → General → Open log folder** (`extensions.log`). Look for lines starting with `[YGP]`.
 
-## O plugin não carrega ("Falha ao carregar extensão")
+## Plugin fails to load ("Failed to load extension")
 
-- O mesmo plugin (mesmo `Id`) não pode estar instalado como `.pext` **e** ativo em *Configurações → Para desenvolvedores → Extensões externas*. Deixe só um.
-- Feche o Playnite antes de instalar ou atualizar o `.pext`.
-- Se o erro citar `Newtonsoft.Json`, gere o `.pext` com `build.bat` (ele inclui a DLL) e não com o Toolbox.
+- The same plugin (same `Id`) cannot be installed as a `.pext` file **and** be active under *Settings → Developer → External extensions* at the same time. Keep only one.
+- Close Playnite before installing or updating the `.pext` file.
+- If the error mentions `Newtonsoft.Json`, build the `.pext` file using `build.bat` (which includes the necessary DLL) instead of using the Toolbox.
 
-## O login não conclui ou o Google bloqueia
+## Login fails or is blocked by Google
 
-Use **Vincular colando cookie (alternativa)**. Entre no YGP no seu navegador, abra F12 → Application → Cookies → `https://yourgamerprofile.com` e copie o valor de `__Secure-better-auth.session_token`.
+Use the **Link by pasting cookie (alternative)** method. Log in to YGP in your web browser, open the developer tools (F12) → Application → Cookies → `https://yourgamerprofile.com`, and copy the value of `__Secure-better-auth.session_token`.
 
-## Sessão expirada
+## Session expired
 
-O envio é suspenso até você vincular a conta de novo. As sessões continuam na fila e são enviadas depois.
+Data submission is suspended until you re-link your account. Pending entries remain in the queue and will be submitted once the account is re-linked.
 
-## Jogos "não encontrados"
+## Games "not found"
 
-O plugin compara o título com estrita igualdade (ignorando edições como "Remastered" ou "Tom Clancy's"). Sequelas e versões Mobile/Demo são recusadas de propósito. Você pode criar um mapeamento manual.
+The plugin uses strict title matching (ignoring editions like "Remastered" or "Tom Clancy's"). Sequels, mobile versions, and demos are intentionally excluded. You can create a manual mapping.
 
-## Erro 429 (muitas requisições)
+## Error 429 (too many requests)
 
-O site limitou a velocidade. Espere alguns minutos. Evite o botão **Diagnosticar site** a não ser que seja necessário.
+The website has rate-limited your requests. Please wait a few minutes. Avoid using the **Diagnose site** button unless absolutely necessary.
 
-## Horas não aumentam
+## Playtime hours not updating
 
-O plugin só reenvia se o tempo **aumentou** e nunca diminui as horas do site. Para forçar, use o menu de contexto do jogo (*YGP: Configurações* / *YGP: Settings*) e ative o reenvio.
+The plugin only sends updates if the playtime has **increased**; it never decreases the hours on the website. To force an update, use the game's context menu (*YGP: Settings*) and enable the re-submission option. ## "Route not found" appeared after a site update
 
-## Apareceu "rota não encontrada" depois de uma atualização do site
-
-As rotas do site não são documentadas e podem mudar. Rode **Diagnosticar site**, anexe o `extensions.log` num issue e revise o `ygp-diagnostico.txt` antes de enviá-lo.
+Site routes are undocumented and subject to change. Run **Diagnose site**, attach the `extensions.log` file to an issue, and review the `ygp-diagnostico.txt` file before submitting it.

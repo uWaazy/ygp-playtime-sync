@@ -82,3 +82,4 @@ Settings values are validated:
 - Max retries: 1-20 attempts
 
 Invalid values are clamped to valid ranges.
+

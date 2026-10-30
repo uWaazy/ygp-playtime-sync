@@ -1,41 +1,39 @@
-# Privacidade
+# Privacy
 
-O plugin não tem telemetria, analytics nem relatórios de falha. A única comunicação externa é com `https://yourgamerprofile.com`, usando HTTPS e a sua conta.
+The plugin does not include telemetry, analytics, or crash reporting. The only external communication is with `https://yourgamerprofile.com`, using HTTPS and your account.
 
-## O que é enviado ao YGP
+## What is sent to YGP
 
-Para cada jogo sincronizado: nome, plataforma, tempo total jogado (em minutos) e, se habilitado, as datas de início e de conclusão. Também são enviados os dados que a edição de jogo do site exige (status e nota são preservados como estão no site).
+For each synchronized game: the name, platform, total time played (in minutes), and—if enabled—the start and completion dates. Data required for editing game entries on the website (such as status and rating) is also sent; these values ​​are preserved exactly as they appear on the site.
 
-## O que fica no seu computador
+## What remains on your computer
 
-Na pasta de dados do plugin (`ExtensionsData\<id do plugin>`):
+In the plugin's data folder (`ExtensionsData\<plugin ID>`):
 
-| Arquivo | Conteúdo |
+| File | Content |
 | --- | --- |
-| `sessions/`, `completed/` | Sessões de jogo pendentes e concluídas (id do jogo, nome, plataforma, início/fim, duração) |
-| `synced-playtime.json` | Último tempo enviado por jogo |
-| `game_mappings.json` | Relação jogo do Playnite ↔ jogo do YGP |
-| `ygp-game-options.json`, `ygp-play-dates.json` | Opções por jogo e datas jogadas |
-| `ygp-diagnostico.txt` | Só existe se você usar o diagnóstico. Contém respostas brutas do site |
+| `sessions/`, `completed/` | Pending and completed game sessions (game ID, name, platform, start/end times, duration) |
+| `synced-playtime.json` | The most recently synced playtime for each game |
+| `game_mappings.json` | Mapping between Playnite games and YGP games |
+| `ygp-game-options.json`, `ygp-play-dates.json` | Per-game options and play dates |
+| `ygp-diagnostico.txt` | Created only if you use the diagnostic feature; contains raw responses from the website |
 
-Nas configurações do plugin ficam também o nome de usuário, o id e o avatar do YGP e os **cookies de sessão** (`AuthCookiesJson`), em texto, sem criptografia.
+The plugin settings also store your YGP username, ID, and avatar, as well as your **session cookies** (`AuthCookiesJson`) in plain text (unencrypted).
 
-## Cookies de sessão
+## Session cookies
 
-O cookie de sessão dá acesso à sua conta no YGP. Quem copiar esse arquivo consegue agir como você no site até a sessão expirar. Por isso:
+Session cookies provide access to your YGP account. Anyone who obtains this file could act as you on the website until the session expires. Therefore:
 
-- Não publique nem compartilhe a pasta `ExtensionsData` do plugin nem o arquivo de configurações do Playnite.
-- Revise o `ygp-diagnostico.txt` antes de anexá-lo em um issue.
-- Use **Desconectar** nas configurações para apagar os cookies guardados.
+- Do not publish or share the plugin's `ExtensionsData` folder or your Playnite configuration file.
+- Review `ygp-diagnostico.txt` before attaching it to any bug report or issue.
+- Use the **Disconnect** option in the settings to delete any saved cookies. ## Reading from other plugins
 
-## Leitura de outros plugins
+If the GameActivity plugin is installed, the extension reads its history (read-only) to determine the first and last days played.
 
-Se o plugin GameActivity estiver instalado, a extensão lê o histórico dele (somente leitura) para descobrir o primeiro e o último dia jogado.
+## Deleting data
 
-## Apagar os dados
+Use **Disconnect** and **Clear local sync data** in the settings, or delete the plugin's data folder while Playnite is closed.
 
-Use **Desconectar** e **Limpar dados locais de sincronização** nas configurações, ou apague a pasta de dados do plugin com o Playnite fechado.
+## Contact
 
-## Contato
-
-Abra um issue no repositório.
+Open an issue in the repository.
