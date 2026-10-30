@@ -1,0 +1,26 @@
+AddonId: 3f5a006a-a508-4be7-b83d-05e30830abe3
+Type: Generic
+Name: Your Gamer Profile Sync (Beta)
+Author: uWaazy
+ShortDescription: Sync your Playnite playtime with your Your Gamer Profile account. Unofficial beta.
+InstallerManifestUrl: https://raw.githubusercontent.com/uWaazy/ygp-playtime-sync/main/store/InstallerManifest.yaml
+SourceUrl: https://github.com/uWaazy/ygp-playtime-sync
+IconUrl: https://raw.githubusercontent.com/uWaazy/ygp-playtime-sync/main/assets/logo.png
+Screenshots:
+  - Thumbnail: https://raw.githubusercontent.com/uWaazy/ygp-playtime-sync/main/assets/thumbnail.png
+    Image: https://raw.githubusercontent.com/uWaazy/ygp-playtime-sync/main/assets/screenshot2.png
+Tags:
+  - Sync
+  - Playtime
+  - Your Gamer Profile
+Links:
+  - Name: GitHub
+    Url: https://github.com/uWaazy/ygp-playtime-sync
+  - Name: Issues Tracker
+    Url: https://github.com/uWaazy/ygp-playtime-sync/issues
+  - Name: Ko-fi (Tips and Donations)
+    Url: https://ko-fi.com/uwaazy
+Description: |-
+  Sends your Playnite playtime to your Your Gamer Profile (YGP) account automatically: syncs when a game closes, keeps recent games on top, sends start/completion dates, detects manual hour edits and can set the completion date after N days without playing.
+
+  Interface in English, Português (Brasil) and Español. Unofficial project, not affiliated with Your Gamer Profile.
