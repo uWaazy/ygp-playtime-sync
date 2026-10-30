@@ -15,7 +15,7 @@ English · [Português (Brasil)](README.pt-BR.md) · [Español](README.es.md)
 
 > **Beta.** This is the first public release. It works day to day, but expect rough edges and please report bugs (see [Reporting problems](#reporting-problems)).
 >
-> **Unofficial project.** It is not affiliated with or endorsed by Your Gamer Profile (YGP). YGP has no public API for writing playtime, so the plugin talks to the site the same way your browser does, while you are signed in. Those routes are undocumented and **may change without notice**.
+> **Unofficial project.** It is not affiliated with or endorsed by Your Gamer Profile (YGP).
 
 ## What it does
 
