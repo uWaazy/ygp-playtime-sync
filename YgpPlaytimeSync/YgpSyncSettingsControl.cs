@@ -239,6 +239,24 @@ namespace YgpPlaytimeSync
 
             _mainPanel.Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 15) });
 
+            // --- Hub pessoal (opcional) ---
+            AddSectionHeader(L.T("sec.hub"));
+            var hubPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 10) };
+            hubPanel.Children.Add(new TextBlock { Text = L.T("hub.url"), FontSize = 11, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 2) });
+            var hubUrlBox = new TextBox { Text = _settings.HubUrl ?? "", Margin = new Thickness(0, 0, 0, 8) };
+            hubUrlBox.TextChanged += (s, e) => _settings.HubUrl = hubUrlBox.Text;
+            hubPanel.Children.Add(hubUrlBox);
+            hubPanel.Children.Add(new TextBlock { Text = L.T("hub.token"), FontSize = 11, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 2) });
+            var hubTokenBox = new PasswordBox { Password = _settings.HubToken ?? "", Margin = new Thickness(0, 0, 0, 4) };
+            hubTokenBox.PasswordChanged += (s, e) => _settings.HubToken = hubTokenBox.Password;
+            hubPanel.Children.Add(hubTokenBox);
+            AddCheckBox(L.T("opt.hub"), L.T("opt.hub.desc"), _settings.HubPublishEnabled,
+                v => { _settings.HubPublishEnabled = v; hubPanel.IsEnabled = v; });
+            hubPanel.IsEnabled = _settings.HubPublishEnabled;
+            _mainPanel.Children.Add(hubPanel);
+
+            _mainPanel.Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 15) });
+
             // --- Fila ---
             AddSectionHeader(L.T("sec.queue"));
 

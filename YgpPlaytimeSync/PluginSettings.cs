@@ -44,6 +44,11 @@ namespace YgpPlaytimeSync
         public DateTime? LastAuthTestUtc { get; set; }
         public DateTime? LastSyncUtc { get; set; }
 
+        // --- Hub (opcional, desligado por padrão): publica o jogo atual no SEU site pessoal ---
+        public bool HubPublishEnabled { get; set; } = false;
+        public string HubUrl { get; set; } = "";
+        public string HubToken { get; set; } = "";
+
         // --- Fila e Lote ---
         public int BatchSize { get; set; } = 10;
         public int MaxRetryCount { get; set; } = 10;

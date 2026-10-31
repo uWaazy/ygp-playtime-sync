@@ -44,6 +44,7 @@ namespace YgpPlaytimeSync
                 _settings = LoadSettings();
                 _settings.AttachOwner(this);
                 ApplyLanguage();
+                _hub = new HubActivityPublisher(_settings, _logger, g => !IsIgnoredByName(g) && !(_settings.IgnoreSoftware && IsLikelySoftware(g)));
                 InitializeComponents();
             }
             catch (Exception ex)
@@ -63,6 +64,7 @@ namespace YgpPlaytimeSync
         private SyncedPlaytimeStore _playtimeStore;
         private GameOptionsStore _gameOptions;
         private PlayDatesStore _playDates;
+        private HubActivityPublisher _hub;
 
         // Configurações e estado
         private PluginSettings _settings;
@@ -88,6 +90,7 @@ namespace YgpPlaytimeSync
 
                 try { _syncKickTimer?.Dispose(); } catch { }
                 try { _manualEditTimer?.Dispose(); } catch { }
+                try { _hub?.Dispose(); } catch { }
 
                 try
                 {
@@ -125,6 +128,7 @@ namespace YgpPlaytimeSync
 
                 _currentGame = args.Game;
                 _gameStartedAt = DateTime.UtcNow;
+                _hub?.GameStarted(args.Game);
                 if (_playDates != null) _playDates.RecordSession(args.Game.Id.ToString(), _gameStartedAt);
                 _logger.Info($"[YGP] Jogo iniciado: {args.Game.Name}");
             }
@@ -144,6 +148,7 @@ namespace YgpPlaytimeSync
 
                 var game = args.Game;
                 var elapsedSeconds = args.ElapsedSeconds;
+                _hub?.GameStopped(game);
 
                 _logger.Info($"[YGP] Jogo finalizado: {game.Name} (sessão: {elapsedSeconds}s | total no Playnite: {game.Playtime}s)");
 
