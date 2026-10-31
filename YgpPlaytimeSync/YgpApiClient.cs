@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -2118,15 +2118,17 @@ return out;";
 
             if (alreadyOnProfile)
             {
-                // O site já tem esse jogo nessa plataforma (provavelmente sincronizado pelo próprio site).
+                // O site já tem esse jogo nessa plataforma, mas a atualização das horas não foi aceita.
+                // Isso é uma FALHA (volta para a fila e aparece no erro), nunca "sincronizado": antes o plugin
+                // marcava como enviado e as horas do site ficavam paradas.
                 return new YgpSyncResult
                 {
-                    Success = true,
+                    Success = false,
                     AlreadyOnProfile = true,
                     UpdateFailed = true,
                     YgpGameId = gameId,
                     TotalPlaytimeMinutes = minutes,
-                    ErrorMessage = "[EXISTS] " + L.T("err.existsRefused")
+                    ErrorMessage = L.T("err.existsRefused") + (attempts.Count > 0 ? " " + Trim(string.Join(" || ", attempts), 400) : "")
                 };
             }
 
@@ -2200,6 +2202,24 @@ return out;";
         private static JToken IsoOrNull(DateTime? d)
         {
             return d.HasValue ? (JToken)new JValue(DateToIso(d.Value)) : JValue.CreateNull();
+        }
+
+        private static DateTime? ParseIso(JToken t)
+        {
+            if (IsNullToken(t)) return null;
+            if (t.Type == JTokenType.Date) return t.Value<DateTime>().ToUniversalTime();
+            DateTime d;
+            if (DateTime.TryParse((string)t, CultureInfo.InvariantCulture,
+                DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out d)) return d;
+            return null;
+        }
+
+        /// <summary>O site exige startedAt &lt;= completedAt. Se estiver invertido, o início passa a ser a conclusão.</summary>
+        private static void FixDateOrder(ref JToken started, ref JToken completed)
+        {
+            var s = ParseIso(started);
+            var c = ParseIso(completed);
+            if (s.HasValue && c.HasValue && s.Value > c.Value) started = completed.DeepClone();
         }
 
         private static bool Flag(JObject o, string key)
@@ -2297,6 +2317,10 @@ return out;";
 
             JToken rating = IsNullToken(pick["gameRating"]) ? (JToken)JValue.CreateNull() : pick["gameRating"].DeepClone();
 
+            // O site exige início <= conclusão. Se a ordem estiver invertida (ex.: início = dia em que o jogo foi
+            // adicionado e conclusão = histórico antigo), corrige antes de enviar em vez de levar um erro 400.
+            FixDateOrder(ref started, ref completed);
+
             var payload = new JObject
             {
                 { "platform", (string)pick["platform"] ?? "UNVERIFIED" },
@@ -2319,6 +2343,25 @@ return out;";
             var result = await TrpcAdaptiveAsync(updateProc, payload, true, gameId, targetPlatform, minutes, 3);
             AppendDiagnostic($"EDIÇÃO {updateProc} {Trim(result.Input.ToString(Formatting.None), 700)} -> HTTP {result.R.Status} {result.R.Code}: {Trim(result.R.Raw, 600)}");
 
+            // Erro de datas: as horas são o que importa. Tenta de novo só com as datas que o próprio site já tinha
+            // (ou sem datas), para nunca deixar de atualizar o tempo por causa de uma data.
+            if (!result.R.Ok && result.R.Code == "BAD_REQUEST" &&
+                ((result.R.Message ?? "").IndexOf("startedAt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 (result.R.Message ?? "").IndexOf("completedAt", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                JToken siteStarted = IsNullToken(pick["startedAt"]) ? (JToken)JValue.CreateNull() : pick["startedAt"].DeepClone();
+                JToken siteCompleted = IsNullToken(pick["completedAt"]) ? (JToken)JValue.CreateNull() : pick["completedAt"].DeepClone();
+                FixDateOrder(ref siteStarted, ref siteCompleted);
+
+                var retry = (JObject)payload.DeepClone();
+                retry["startedAt"] = siteStarted;
+                retry["completedAt"] = siteCompleted;
+                retry["ignoreDates"] = IsNullToken(siteStarted) && IsNullToken(siteCompleted);
+
+                result = await TrpcAdaptiveAsync(updateProc, retry, true, gameId, targetPlatform, minutes, 3);
+                AppendDiagnostic($"EDIÇÃO (2ª tentativa, datas do site) {updateProc} {Trim(result.Input.ToString(Formatting.None), 700)} -> HTTP {result.R.Status} {result.R.Code}: {Trim(result.R.Raw, 600)}");
+            }
+
             if (result.R.Status == 401 || result.R.Code == "UNAUTHORIZED") return AuthFailure();
             if (result.R.IsBlocked) return new YgpSyncResult { Success = false, ErrorMessage = result.R.Message };
 
@@ -2339,10 +2382,12 @@ return out;";
             attempts.Add(updateProc + ": " + Trim(result.R.Message ?? result.R.Raw, 220));
             _logger.Warn($"[YGP] {updateProc} recusado (HTTP {result.R.Status}, {result.R.Code}): {Trim(result.R.Raw, 500)}");
 
-            _editFailures++;
-            if (result.R.ProcedureMissing || _editFailures >= 8)
+            // Erro de validação (400) ou limite (429) é problema daquele jogo/momento, não da rota: nunca desativa a
+            // rota por isso (foi o que impedia TODOS os jogos de atualizar até reiniciar o Playnite).
+            // Só desativa se o site realmente não tem mais a rota.
+            if (result.R.ProcedureMissing)
             {
-                _logger.Warn("[YGP] A rota de edição foi desativada nesta sessão (falhas repetidas). Veja o ygp-diagnostico.txt.");
+                _logger.Warn("[YGP] O site não tem mais a rota de edição; desativada nesta sessão. Veja o ygp-diagnostico.txt.");
                 _skipProcs.Add(updateProc);
             }
 
@@ -2512,10 +2557,9 @@ return out;";
             attempts.Add(updateProc + ": " + Trim(result.R.Message ?? result.R.Raw, 220));
             _logger.Warn($"[YGP] {updateProc} recusado (HTTP {result.R.Status}, {result.R.Code}): {Trim(result.R.Raw, 500)}");
 
-            _editFailures++;
-            if (result.R.ProcedureMissing || _editFailures >= 6)
+            if (result.R.ProcedureMissing)
             {
-                _logger.Warn("[YGP] A rota de edição do site foi desativada nesta sessão (falhas repetidas). Veja o ygp-diagnostico.txt.");
+                _logger.Warn("[YGP] O site não tem mais a rota de edição; desativada nesta sessão. Veja o ygp-diagnostico.txt.");
                 _skipProcs.Add(updateProc);
             }
 

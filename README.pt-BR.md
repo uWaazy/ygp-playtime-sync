@@ -5,7 +5,7 @@
 **Envie seu tempo de jogo do Playnite para a sua conta do [Your Gamer Profile](https://yourgamerprofile.com/), automaticamente.**
 
 ![Status](https://img.shields.io/badge/status-beta-orange)
-![Versão](https://img.shields.io/badge/vers%C3%A3o-0.5.0--beta-blue)
+![Versão](https://img.shields.io/badge/vers%C3%A3o-0.5.1--beta-blue)
 ![Playnite](https://img.shields.io/badge/Playnite-10.x-5b8def)
 ![Idiomas](https://img.shields.io/badge/UI-English%20%7C%20Portugu%C3%AAs%20%7C%20Espa%C3%B1ol-green)
 

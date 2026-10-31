@@ -31,13 +31,13 @@ try {
     if ($Version -notmatch '^\d+\.\d+\.\d+$') { Fail "Invalid version: '$Version'. Use the format 1.2.3 (e.g. 0.5.2)." }
     Write-Host "Version  : $Version"
 
-    function Update-VersionInFile([string]$Path, [string]$Pattern, [string]$Replacement) {
+    function Update-VersionInFile([string]$Path, [string]$Pattern, [string]$Replacement, [int]$Count = -1) {
         if (-not (Test-Path $Path)) { return }
         $bytes = [IO.File]::ReadAllBytes($Path)
         $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
         $text = [Text.Encoding]::UTF8.GetString($bytes)
         if ($hasBom) { $text = $text.Substring(1) }
-        $updated = [regex]::Replace($text, $Pattern, $Replacement)
+        $updated = (New-Object Text.RegularExpressions.Regex($Pattern)).Replace($text, $Replacement, $Count)
         if ($updated -ne $text) {
             [IO.File]::WriteAllText($Path, $updated, (New-Object Text.UTF8Encoding($hasBom)))
         }
@@ -46,6 +46,18 @@ try {
     Update-VersionInFile (Join-Path $Root "README.md") '(badge/version-)[0-9][0-9.]*(--)' ('${1}' + $Version + '${2}')
     Update-VersionInFile (Join-Path $Root "README.pt-BR.md") '(badge/vers%C3%A3o-)[0-9][0-9.]*(--)' ('${1}' + $Version + '${2}')
     Update-VersionInFile (Join-Path $Root "README.es.md") '(badge/versi%C3%B3n-)[0-9][0-9.]*(--)' ('${1}' + $Version + '${2}')
+
+    # Store manifest (store\InstallerManifest.yaml): version, release date and .pext download link of the newest entry.
+    $manifestPath = Join-Path $Root "store\InstallerManifest.yaml"
+    if (Test-Path $manifestPath) {
+        $manifestVersion = ([regex]::Match([IO.File]::ReadAllText($manifestPath), '(?m)^\s*-\s*Version:\s*(\S+)')).Groups[1].Value
+        Update-VersionInFile $manifestPath '(?m)^(\s*-\s*Version:\s*)\S+' ('${1}' + $Version) 1
+        if ($manifestVersion -ne $Version) {
+            Update-VersionInFile $manifestPath '(?m)^(\s*ReleaseDate:\s*)\S+' ('${1}' + (Get-Date -Format 'yyyy-MM-dd')) 1
+            Write-Host "NOTE     : store\InstallerManifest.yaml now points to $Version - update its Changelog lines." -ForegroundColor Yellow
+        }
+        Update-VersionInFile $manifestPath '(?m)^(\s*PackageUrl:\s*\S*/releases/download/)v[^/\s]+/ygp-playtime-sync-v[^\s/]+\.pext' ('${1}v' + $Version + '/ygp-playtime-sync-v' + $Version + '.pext') 1
+    }
     $changelogPath = Join-Path $Root "CHANGELOG.md"
     if ((Test-Path $changelogPath) -and -not ([IO.File]::ReadAllText($changelogPath) -match "(?m)^##\s+$([regex]::Escape($Version))\b")) {
         Write-Host "WARNING: CHANGELOG.md has no '## $Version' section." -ForegroundColor Yellow

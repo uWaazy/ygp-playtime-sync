@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -92,6 +92,7 @@ namespace YgpPlaytimeSync
                 try
                 {
                     PlayniteApi.Database.Games.ItemUpdated -= OnDatabaseGamesUpdated;
+                    PlayniteApi.Database.Games.ItemCollectionChanged -= OnDatabaseGamesAdded;
                 }
                 catch { }
 
@@ -229,6 +230,33 @@ namespace YgpPlaytimeSync
             catch (Exception ex)
             {
                 _logger.Error(ex, $"[YGP] Erro ao processar atualização de biblioteca: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Jogo novo na biblioteca (ex.: acabou de instalar/importar da Steam): se já veio com horas, tenta enviar ao YGP.
+        /// Usa o mesmo caminho das edições manuais (aguarda alguns segundos para agrupar e checar as regras de envio).
+        /// </summary>
+        private void OnDatabaseGamesAdded(object sender, ItemCollectionChangedEventArgs<Game> args)
+        {
+            if (_settings == null || !_settings.IsConnected || args == null || args.AddedItems == null) return;
+
+            try
+            {
+                foreach (var game in args.AddedItems)
+                {
+                    if (game == null || game.Playtime < 60) continue;
+                    _manualEdits[game.Id] = 0;
+                }
+
+                if (!_manualEdits.IsEmpty)
+                {
+                    _manualEditTimer?.Change(8000, Timeout.Infinite);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"[YGP] Erro ao processar jogo novo na biblioteca: {ex.Message}");
             }
         }
 
@@ -716,8 +744,25 @@ namespace YgpPlaytimeSync
             }
         }
 
+        // Programas muito comuns que aparecem na biblioteca como "jogo" mas não são jogos (ignorados quando
+        // "Ignorar aplicativos/software" está ligado), além da lista de nomes do usuário.
+        private static readonly string[] KnownApps =
+        {
+            "OCCT", "Wallpaper Engine", "MSI Afterburner", "HWiNFO", "CPU-Z", "GPU-Z", "FurMark", "AIDA64",
+            "Cinebench", "OBS Studio", "Blender", "Lossless Scaling", "Process Lasso"
+        };
+
+        private bool IsKnownApp(Game g)
+        {
+            if (_settings == null || !_settings.IgnoreSoftware) return false;
+            var key = YgpApiClient.DuplicateKey(g.Name);
+            return key.Length > 0 && KnownApps.Any(a => YgpApiClient.DuplicateKey(a) == key);
+        }
+
         private bool IsIgnoredByName(Game g)
         {
+            if (IsKnownApp(g)) return true;
+
             var raw = _settings.IgnoredGameNames;
             if (string.IsNullOrWhiteSpace(raw)) return false;
 
@@ -1232,6 +1277,7 @@ namespace YgpPlaytimeSync
             try
             {
                 PlayniteApi.Database.Games.ItemUpdated += OnDatabaseGamesUpdated;
+                PlayniteApi.Database.Games.ItemCollectionChanged += OnDatabaseGamesAdded;
             }
             catch (Exception ex)
             {
