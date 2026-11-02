@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -67,6 +67,18 @@ namespace YgpPlaytimeSync
         /// <summary>Preenchido pelo provedor após o envio: total do jogo em minutos (não é salvo em disco).</summary>
         [JsonIgnore]
         public int SyncedTotalMinutes { get; set; }
+
+        /// <summary>Status do Playnite que acabou de ser aplicado no site (para o aviso). Não é salvo em disco.</summary>
+        [JsonIgnore]
+        public string SyncedStatusFrom { get; set; }
+
+        /// <summary>Status do YGP aplicado (já traduzido). Não é salvo em disco.</summary>
+        [JsonIgnore]
+        public string SyncedStatusTo { get; set; }
+
+        /// <summary>Avaliação em estrelas aplicada no site. Não é salvo em disco.</summary>
+        [JsonIgnore]
+        public double? SyncedRating { get; set; }
 
         /// <summary>True if this entry was triggered by a manual edit in Playnite library.</summary>
         public bool IsManualEdit { get; set; }

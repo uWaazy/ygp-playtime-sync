@@ -43,6 +43,9 @@ namespace YgpPlaytimeSync
         /// <summary>Chamado quando o status do Playnite foi gravado no site (id do jogo no Playnite, status).</summary>
         public Action<string, string> OnStatusApplied { get; set; }
 
+        /// <summary>Chamado quando a avaliação (estrelas) foi gravada no site (id do jogo no Playnite, estrelas).</summary>
+        public Action<string, double> OnRatingApplied { get; set; }
+
         public Task<string> LearnFromSiteAsync()
         {
             return _apiClient.LearnFromSiteAsync();
@@ -210,7 +213,7 @@ namespace YgpPlaytimeSync
             dates.Force = forced;
 
             // Status novo para enviar conta como motivo para escrever, mesmo com as mesmas horas.
-            bool statusPending = !string.IsNullOrEmpty(dates.Status);
+            bool statusPending = !string.IsNullOrEmpty(dates.Status) || dates.Rating.HasValue;
             Func<string, bool> allowWrite = ygpId => forced || statusPending || store == null || !store.Covers("ygp:" + ygpId + "|" + platformKey, totalSeconds);
 
             var previousMinutes = store != null ? store.GetMinutes(session.PlayniteGameId) : 0;
@@ -226,9 +229,19 @@ namespace YgpPlaytimeSync
                 session.SyncedAddedMinutes = Math.Max(0, totalSeconds / 60 - minutesBefore);
                 session.ForceResend = false;
                 try { OnGameSynced?.Invoke(session.PlayniteGameId); } catch { }
+                session.SyncedStatusFrom = null;
+                session.SyncedStatusTo = null;
+                session.SyncedRating = null;
                 if (result.StatusApplied && !string.IsNullOrEmpty(dates.Status))
                 {
+                    session.SyncedStatusFrom = string.IsNullOrWhiteSpace(dates.StatusLabel) ? dates.Status : dates.StatusLabel;
+                    session.SyncedStatusTo = L.T("status.site." + dates.Status);
                     try { OnStatusApplied?.Invoke(session.PlayniteGameId, dates.Status); } catch { }
+                }
+                if (result.RatingApplied && dates.Rating.HasValue)
+                {
+                    session.SyncedRating = dates.Rating;
+                    try { OnRatingApplied?.Invoke(session.PlayniteGameId, dates.Rating.Value); } catch { }
                 }
 
                 // Se o site recusou a atualização, NÃO registra: assim o jogo é tentado de novo na próxima sincronização.

@@ -231,6 +231,34 @@ namespace YgpPlaytimeSync
                         }
                     }
 
+                    // Favorito marcado agora = 5 estrelas; Avaliação do usuário alterada = novas estrelas no site.
+                    if (_gameOptions != null)
+                    {
+                        var gid = newGame.Id.ToString();
+                        bool ratingEvent = false;
+
+                        if (_settings.FavoriteGivesFiveStars && !oldGame.Favorite && newGame.Favorite)
+                        {
+                            _gameOptions.Update(gid, o => { o.PendingFavoriteRating = true; o.ForceResend = true; });
+                            ratingEvent = true;
+                        }
+                        else if (_settings.SyncUserRating && oldGame.UserScore != newGame.UserScore)
+                        {
+                            _gameOptions.Update(gid, o => { o.PendingFavoriteRating = false; });
+                            if (ComputeRating(newGame, _gameOptions.Get(gid)).HasValue)
+                            {
+                                _gameOptions.Update(gid, o => o.ForceResend = true);
+                                ratingEvent = true;
+                            }
+                        }
+
+                        if (ratingEvent && newGame.Playtime >= 60)
+                        {
+                            _manualEdits[newGame.Id] = 0;
+                            continue;
+                        }
+                    }
+
                     if (!_settings.SyncManualPlaytimeEdits) continue;
                     if (oldGame.Playtime == newGame.Playtime) continue;
 
@@ -594,11 +622,17 @@ namespace YgpPlaytimeSync
                 var options = _gameOptions != null ? _gameOptions.Get(playniteGameId) : new GameOptions();
 
                 result.ReopenOnReplay = options.ReopenOnReplay ?? _settings.ReopenOnReplay;
+                var gameForExtras = PlayniteApi.Database.Games.Get(id);
                 if (_settings.SyncCompletionStatus)
                 {
-                    var st = MapCompletionStatus(PlayniteApi.Database.Games.Get(id));
-                    if (st != null && st != options.LastStatusSent) result.Status = st;
+                    var st = MapCompletionStatus(gameForExtras);
+                    if (st != null && st != options.LastStatusSent)
+                    {
+                        result.Status = st;
+                        result.StatusLabel = CompletionStatusName(gameForExtras);
+                    }
                 }
+                result.Rating = ComputeRating(gameForExtras, options);
 
                 bool sendStart = options.SendStartDate ?? _settings.SendStartDateByDefault;
                 bool sendCompleted = options.SetCompletedAtLastPlayed;
@@ -755,15 +789,24 @@ namespace YgpPlaytimeSync
 
             var general = _playtimeStore != null ? _playtimeStore.TotalMinutes() : 0;
 
-            if (result.Synced.Count == 1)
+            // Horas: só os jogos que realmente subiram (ou que não tiveram mudança de status/nota).
+            var hourGames = result.Synced.Where(x => x.AddedMinutes > 0 || (x.StatusTo == null && !x.Rating.HasValue)).ToList();
+            if (hourGames.Count == 1)
             {
-                var g = result.Synced[0];
+                var g = hourGames[0];
                 NotifyUser(L.T("notify.single", g.Name, FormatMinutes(g.AddedMinutes), FormatMinutes(g.TotalMinutes), FormatMinutes(general)));
             }
-            else
+            else if (hourGames.Count > 1)
             {
-                var added = result.Synced.Sum(x => x.AddedMinutes);
-                NotifyUser(L.T("notify.multi", result.Synced.Count, FormatMinutes(added), FormatMinutes(general)));
+                var added = hourGames.Sum(x => x.AddedMinutes);
+                NotifyUser(L.T("notify.multi", hourGames.Count, FormatMinutes(added), FormatMinutes(general)));
+            }
+
+            // Status e avaliação: avisos separados, com o que mudou no Playnite e o que foi aplicado no site.
+            foreach (var g in result.Synced)
+            {
+                if (g.StatusTo != null) NotifyUser(L.T("notify.status", g.Name, g.StatusFrom, g.StatusTo));
+                if (g.Rating.HasValue) NotifyUser(L.T("notify.rating", g.Name, g.Rating.Value.ToString("0.#")));
             }
         }
 
@@ -842,9 +885,59 @@ namespace YgpPlaytimeSync
         /// <summary>True se o status do Playnite para este jogo ainda não foi enviado ao YGP (ou mudou desde o último envio).</summary>
         private bool StatusPending(Game g)
         {
-            if (_settings == null || !_settings.SyncCompletionStatus || _gameOptions == null || g == null) return false;
-            var st = MapCompletionStatus(g);
-            return st != null && st != _gameOptions.Get(g.Id.ToString()).LastStatusSent;
+            if (_settings == null || _gameOptions == null || g == null) return false;
+            var opt = _gameOptions.Get(g.Id.ToString());
+
+            if (_settings.SyncCompletionStatus)
+            {
+                var st = MapCompletionStatus(g);
+                if (st != null && st != opt.LastStatusSent) return true;
+            }
+
+            return ComputeRating(g, opt).HasValue;
+        }
+
+        /// <summary>
+        /// Avaliação em estrelas (0.5 a 5) a enviar ao YGP, ou null se não há nada novo.
+        /// Favorito recém-marcado = 5 estrelas; senão a Avaliação do usuário do Playnite (0-100) vira estrelas (100 = 5, 50 = 2.5).
+        /// </summary>
+        private double? ComputeRating(Game g, GameOptions opt)
+        {
+            try
+            {
+                if (_settings == null || g == null || opt == null) return null;
+
+                double? stars = null;
+                if (_settings.FavoriteGivesFiveStars && opt.PendingFavoriteRating && g.Favorite) stars = 5.0;
+                else if (_settings.SyncUserRating && g.UserScore.HasValue && g.UserScore.Value > 0)
+                {
+                    stars = Math.Round(g.UserScore.Value / 10.0, MidpointRounding.AwayFromZero) / 2.0;
+                    if (stars < 0.5) stars = 0.5;
+                    if (stars > 5.0) stars = 5.0;
+                }
+
+                if (!stars.HasValue) return null;
+                if (opt.LastRatingSent.HasValue && Math.Abs(opt.LastRatingSent.Value - stars.Value) < 0.01) return null;
+                return stars;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string CompletionStatusName(Game g)
+        {
+            try
+            {
+                if (g == null || g.CompletionStatusId == Guid.Empty) return null;
+                var cs = PlayniteApi.Database.CompletionStatuses.Get(g.CompletionStatusId);
+                return cs != null ? cs.Name : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static bool HasAny(string text, params string[] parts)
@@ -1375,6 +1468,11 @@ namespace YgpPlaytimeSync
             _ygpProvider.OnStatusApplied = (id, status) =>
             {
                 try { _gameOptions.Update(id, o => o.LastStatusSent = status); }
+                catch { }
+            };
+            _ygpProvider.OnRatingApplied = (id, stars) =>
+            {
+                try { _gameOptions.Update(id, o => { o.LastRatingSent = stars; o.PendingFavoriteRating = false; }); }
                 catch { }
             };
             _ygpProvider.PlaytimeResolver = ResolveCurrentPlaytime;

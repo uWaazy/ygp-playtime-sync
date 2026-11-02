@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -235,7 +235,10 @@ namespace YgpPlaytimeSync
                     {
                         Name = representative.GameName,
                         AddedMinutes = representative.SyncedAddedMinutes,
-                        TotalMinutes = representative.SyncedTotalMinutes
+                        TotalMinutes = representative.SyncedTotalMinutes,
+                        StatusFrom = representative.SyncedStatusFrom,
+                        StatusTo = representative.SyncedStatusTo,
+                        Rating = representative.SyncedRating
                     });
                     _logger.Info($"Session synced: {representative.GameName}");
                 }
@@ -312,6 +315,9 @@ namespace YgpPlaytimeSync
         public string Name { get; set; }
         public int AddedMinutes { get; set; }
         public int TotalMinutes { get; set; }
+        public string StatusFrom { get; set; }
+        public string StatusTo { get; set; }
+        public double? Rating { get; set; }
     }
 
     /// <summary>

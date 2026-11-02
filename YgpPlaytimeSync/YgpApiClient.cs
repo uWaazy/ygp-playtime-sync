@@ -2021,6 +2021,7 @@ return out;";
             };
 
             if (dates != null && !string.IsNullOrEmpty(dates.Status)) ApplyStatusToPayload(payload, dates.Status);
+            if (dates != null && dates.Rating.HasValue) payload["rating"] = dates.Rating.Value;
 
             var attempts = new List<string>();
             var tried = new HashSet<string>();
@@ -2076,7 +2077,7 @@ return out;";
                         AppendDiagnostic($"ROTA DE EDIÇÃO em uso: {proc} {current.ToString(Formatting.None)}");
                     }
 
-                    return new YgpSyncResult { Success = true, YgpGameId = gameId, TotalPlaytimeMinutes = minutes, StatusApplied = dates != null && !string.IsNullOrEmpty(dates.Status) };
+                    return new YgpSyncResult { Success = true, YgpGameId = gameId, TotalPlaytimeMinutes = minutes, StatusApplied = dates != null && !string.IsNullOrEmpty(dates.Status), RatingApplied = dates != null && dates.Rating.HasValue };
                 }
 
                 // Só falha de login de verdade interrompe; "sem permissão" numa rota experimental apenas descarta a rota.
@@ -2327,6 +2328,7 @@ return out;";
 
             bool force = dates != null && dates.Force;
             string newStatus = dates != null ? dates.Status : null;
+            double? newRating = dates != null ? dates.Rating : null;
             bool statusWinsOverReopen = newStatus == "beaten" || newStatus == "completed";
 
             // "Voltou a jogar": o site já tem data de conclusão e as horas subiram -> a conclusão deixa de valer.
@@ -2334,7 +2336,7 @@ return out;";
                           && existing.HasValue && minutes > existing.Value
                           && !IsNullToken(pick["completedAt"]) && !dates.Completed.HasValue;
 
-            if (!force && string.IsNullOrEmpty(newStatus) && existing.HasValue && existing.Value >= minutes)
+            if (!force && string.IsNullOrEmpty(newStatus) && !newRating.HasValue && existing.HasValue && existing.Value >= minutes)
             {
                 return new YgpSyncResult
                 {
@@ -2359,6 +2361,7 @@ return out;";
             if (reopen) completed = JValue.CreateNull();
 
             JToken rating = IsNullToken(pick["gameRating"]) ? (JToken)JValue.CreateNull() : pick["gameRating"].DeepClone();
+            if (newRating.HasValue) rating = new JValue(newRating.Value);
 
             // O site exige início <= conclusão. Se a ordem estiver invertida (ex.: início = dia em que o jogo foi
             // adicionado e conclusão = histórico antigo), corrige antes de enviar em vez de levar um erro 400.
@@ -2391,7 +2394,8 @@ return out;";
 
             // O site recusou o status enviado: as horas valem mais. Tenta de novo mantendo o status que o site já tinha.
             bool statusDropped = false;
-            if (!result.R.Ok && result.R.Code == "BAD_REQUEST" && !string.IsNullOrEmpty(newStatus))
+            bool ratingDropped = false;
+            if (!result.R.Ok && result.R.Code == "BAD_REQUEST" && (!string.IsNullOrEmpty(newStatus) || newRating.HasValue))
             {
                 var keep = (JObject)payload.DeepClone();
                 keep["isCompleted"] = Flag(pick, "isCompleted");
@@ -2400,9 +2404,11 @@ return out;";
                 keep["isAbandoned"] = Flag(pick, "isAbandoned");
                 keep["isPaused"] = Flag(pick, "isPaused");
                 keep["isBacklog"] = Flag(pick, "isBacklog");
+                keep["rating"] = IsNullToken(pick["gameRating"]) ? (JToken)JValue.CreateNull() : pick["gameRating"].DeepClone();
                 result = await TrpcAdaptiveAsync(updateProc, keep, true, gameId, targetPlatform, minutes, 3);
                 AppendDiagnostic($"EDIÇÃO (2ª tentativa, sem mudar o status) {updateProc} {Trim(result.Input.ToString(Formatting.None), 700)} -> HTTP {result.R.Status} {result.R.Code}: {Trim(result.R.Raw, 600)}");
                 statusDropped = true;
+                ratingDropped = true;
                 payload = keep;
             }
 
@@ -2440,6 +2446,7 @@ return out;";
                     YgpGameId = gameId,
                     TotalPlaytimeMinutes = minutes,
                     StatusApplied = !string.IsNullOrEmpty(newStatus) && !statusDropped,
+                    RatingApplied = newRating.HasValue && !ratingDropped,
                     SiteMinutesBefore = existing.HasValue ? (int?)Math.Round(existing.Value) : null
                 };
             }
@@ -2957,6 +2964,8 @@ return out;";
         public bool UpdateFailed { get; set; }
         /// <summary>O status do Playnite foi gravado no site nesta sincronização.</summary>
         public bool StatusApplied { get; set; }
+        /// <summary>A avaliação em estrelas foi gravada no site nesta sincronização.</summary>
+        public bool RatingApplied { get; set; }
         /// <summary>Minutos que o site tinha antes da atualização (para mostrar quanto subiu).</summary>
         public int? SiteMinutesBefore { get; set; }
         public int TotalPlaytimeMinutes { get; set; }

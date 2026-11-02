@@ -38,6 +38,12 @@ namespace YgpPlaytimeSync
         /// <summary>Envia o status do jogo no Playnite (Jogando, Finalizado, Completado, Abandonado, Em espera, Planejo jogar) para o YGP.</summary>
         public bool SyncCompletionStatus { get; set; } = true;
 
+        /// <summary>Envia a Avaliação do usuário do Playnite (0-100) como estrelas (0.5 a 5) para o YGP.</summary>
+        public bool SyncUserRating { get; set; } = true;
+
+        /// <summary>Ao marcar um jogo como favorito no Playnite, o YGP recebe 5 estrelas automaticamente.</summary>
+        public bool FavoriteGivesFiveStars { get; set; } = true;
+
         /// <summary>Ao voltar a jogar um jogo que já tem data de conclusão no site, remove essa data (cada jogo pode mudar isso no menu).</summary>
         public bool ReopenOnReplay { get; set; } = false;
 
