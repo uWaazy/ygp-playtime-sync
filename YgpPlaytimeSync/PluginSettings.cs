@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using Playnite.SDK;
@@ -34,6 +34,12 @@ namespace YgpPlaytimeSync
         /// <summary>Dias sem jogar (de 7 a 30) para considerar o jogo concluído.</summary>
         public int AutoCompleteDays { get; set; } = 14;
         public bool RetryFailedSessions { get; set; } = true;
+
+        /// <summary>Envia o status do jogo no Playnite (Jogando, Finalizado, Completado, Abandonado, Em espera, Planejo jogar) para o YGP.</summary>
+        public bool SyncCompletionStatus { get; set; } = true;
+
+        /// <summary>Ao voltar a jogar um jogo que já tem data de conclusão no site, remove essa data (cada jogo pode mudar isso no menu).</summary>
+        public bool ReopenOnReplay { get; set; } = false;
 
         // --- Dados da Conta Real (Your Gamer Profile) ---
         public bool IsConnected { get; set; } = false;

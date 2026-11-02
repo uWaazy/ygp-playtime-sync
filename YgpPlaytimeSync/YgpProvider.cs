@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Playnite.SDK;
 
@@ -39,6 +39,9 @@ namespace YgpPlaytimeSync
 
         /// <summary>Chamado depois que um jogo foi enviado com sucesso (limpa o "reenviar" do jogo).</summary>
         public Action<string> OnGameSynced { get; set; }
+
+        /// <summary>Chamado quando o status do Playnite foi gravado no site (id do jogo no Playnite, status).</summary>
+        public Action<string, string> OnStatusApplied { get; set; }
 
         public Task<string> LearnFromSiteAsync()
         {
@@ -199,13 +202,16 @@ namespace YgpPlaytimeSync
 
             var platformKey = YgpApiClient.MapPlatform(session.Platform);
             bool forced = session.ForceResend;
-            Func<string, bool> allowWrite = ygpId => forced || store == null || !store.Covers("ygp:" + ygpId + "|" + platformKey, totalSeconds);
 
             YgpPlayDates dates = null;
             try { dates = DatesResolver?.Invoke(session.PlayniteGameId); }
             catch (Exception ex) { _logger.Debug($"[YGP] Não foi possível calcular as datas do jogo: {ex.Message}"); }
             if (dates == null) dates = new YgpPlayDates();
             dates.Force = forced;
+
+            // Status novo para enviar conta como motivo para escrever, mesmo com as mesmas horas.
+            bool statusPending = !string.IsNullOrEmpty(dates.Status);
+            Func<string, bool> allowWrite = ygpId => forced || statusPending || store == null || !store.Covers("ygp:" + ygpId + "|" + platformKey, totalSeconds);
 
             var previousMinutes = store != null ? store.GetMinutes(session.PlayniteGameId) : 0;
             var result = await _apiClient.SyncGameAsync(session.GameName, knownGameId, totalSeconds, session.Platform, allowWrite, dates);
@@ -220,6 +226,10 @@ namespace YgpPlaytimeSync
                 session.SyncedAddedMinutes = Math.Max(0, totalSeconds / 60 - minutesBefore);
                 session.ForceResend = false;
                 try { OnGameSynced?.Invoke(session.PlayniteGameId); } catch { }
+                if (result.StatusApplied && !string.IsNullOrEmpty(dates.Status))
+                {
+                    try { OnStatusApplied?.Invoke(session.PlayniteGameId, dates.Status); } catch { }
+                }
 
                 // Se o site recusou a atualização, NÃO registra: assim o jogo é tentado de novo na próxima sincronização.
                 if (store != null && !result.UpdateFailed)

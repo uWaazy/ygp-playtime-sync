@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -20,6 +20,12 @@ namespace YgpPlaytimeSync
 
         /// <summary>True quando o envio foi forçado por uma mudança de opção (mesmo sem aumento de horas).</summary>
         public bool Force { get; set; }
+
+        /// <summary>Status do Playnite a enviar ao YGP: playing, beaten, completed, abandoned, onhold ou backlog. Null = não mexe no status do site.</summary>
+        public string Status { get; set; }
+
+        /// <summary>Ao voltar a jogar um jogo que já tem data de conclusão no site, remove essa data.</summary>
+        public bool ReopenOnReplay { get; set; }
     }
 
     /// <summary>Opções do plugin escolhidas pelo usuário para UM jogo (menu "YGP: Settings").</summary>
@@ -36,6 +42,12 @@ namespace YgpPlaytimeSync
 
         /// <summary>Último dia jogado (data) para o qual a conclusão automática já foi enviada ao site.</summary>
         public DateTime? AutoCompletedFor { get; set; }
+
+        /// <summary>Null = usa o padrão global; true/false = escolha deste jogo (remover a data de conclusão ao voltar a jogar).</summary>
+        public bool? ReopenOnReplay { get; set; }
+
+        /// <summary>Último status do Playnite que o plugin enviou ao site para este jogo (só reenvia quando muda).</summary>
+        public string LastStatusSent { get; set; }
     }
 
     public class GameOptionsStore
@@ -70,7 +82,7 @@ namespace YgpPlaytimeSync
             {
                 GameOptions o;
                 if (!_items.TryGetValue(gameId, out o)) return new GameOptions();
-                return new GameOptions { SendStartDate = o.SendStartDate, SetCompletedAtLastPlayed = o.SetCompletedAtLastPlayed, ForceResend = o.ForceResend, AutoCompletedFor = o.AutoCompletedFor };
+                return new GameOptions { SendStartDate = o.SendStartDate, SetCompletedAtLastPlayed = o.SetCompletedAtLastPlayed, ForceResend = o.ForceResend, AutoCompletedFor = o.AutoCompletedFor, ReopenOnReplay = o.ReopenOnReplay, LastStatusSent = o.LastStatusSent };
             }
         }
 

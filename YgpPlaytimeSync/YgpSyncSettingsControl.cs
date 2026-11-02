@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -207,6 +207,9 @@ namespace YgpPlaytimeSync
             AddCheckBox(L.T("opt.sendStart"), L.T("opt.sendStart.desc"),
                 _settings.SendStartDateByDefault, v => _settings.SendStartDateByDefault = v);
 
+            AddCheckBox(L.T("opt.syncStatus"), L.T("opt.syncStatus.desc"),
+                _settings.SyncCompletionStatus, v => _settings.SyncCompletionStatus = v);
+
             AddCheckBox(L.T("opt.notify"), L.T("opt.notify.desc"),
                 _settings.ShowSyncNotifications, v => _settings.ShowSyncNotifications = v);
 
@@ -236,6 +239,9 @@ namespace YgpPlaytimeSync
                 startDays, PluginSettings.AutoCompleteMinDays, PluginSettings.AutoCompleteMaxDays, L.T("unit.days"),
                 v => _settings.AutoCompleteDays = v);
             daysPanel.IsEnabled = _settings.AutoCompleteEnabled;
+
+            AddCheckBox(L.T("opt.reopen"), L.T("opt.reopen.desc"),
+                _settings.ReopenOnReplay, v => _settings.ReopenOnReplay = v);
 
             _mainPanel.Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 15) });
 

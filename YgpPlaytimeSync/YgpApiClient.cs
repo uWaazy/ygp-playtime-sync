@@ -2020,6 +2020,8 @@ return out;";
                 { "startedAt", startedToken }
             };
 
+            if (dates != null && !string.IsNullOrEmpty(dates.Status)) ApplyStatusToPayload(payload, dates.Status);
+
             var attempts = new List<string>();
             var tried = new HashSet<string>();
             var candidates = new List<string> { "unverified.addGame" };
@@ -2074,7 +2076,7 @@ return out;";
                         AppendDiagnostic($"ROTA DE EDIÇÃO em uso: {proc} {current.ToString(Formatting.None)}");
                     }
 
-                    return new YgpSyncResult { Success = true, YgpGameId = gameId, TotalPlaytimeMinutes = minutes };
+                    return new YgpSyncResult { Success = true, YgpGameId = gameId, TotalPlaytimeMinutes = minutes, StatusApplied = dates != null && !string.IsNullOrEmpty(dates.Status) };
                 }
 
                 // Só falha de login de verdade interrompe; "sem permissão" numa rota experimental apenas descarta a rota.
@@ -2222,6 +2224,33 @@ return out;";
             if (s.HasValue && c.HasValue && s.Value > c.Value) started = completed.DeepClone();
         }
 
+        /// <summary>Converte o status (playing, beaten, completed, abandoned, onhold, backlog) nos botões de status do YGP.</summary>
+        private static void StatusFlags(string status, out bool completed, out bool finished, out bool playing, out bool abandoned, out bool paused, out bool backlog)
+        {
+            completed = finished = playing = abandoned = paused = backlog = false;
+            switch ((status ?? "").ToLowerInvariant())
+            {
+                case "beaten": finished = true; break;
+                case "completed": finished = true; completed = true; break;
+                case "abandoned": abandoned = true; break;
+                case "onhold": paused = true; break;
+                case "backlog": backlog = true; break;
+                default: playing = true; break;
+            }
+        }
+
+        private static void ApplyStatusToPayload(JObject payload, string status)
+        {
+            bool c, f, p, a, h, b;
+            StatusFlags(status, out c, out f, out p, out a, out h, out b);
+            payload["isCompleted"] = c;
+            payload["isFinished"] = f;
+            payload["isPlaying"] = p;
+            payload["isAbandoned"] = a;
+            payload["isPaused"] = h;
+            payload["isBacklog"] = b;
+        }
+
         private static bool Flag(JObject o, string key)
         {
             var t = o[key];
@@ -2297,7 +2326,15 @@ return out;";
             else if (synced != null && (synced.Type == JTokenType.Integer || synced.Type == JTokenType.Float)) existing = (double)synced;
 
             bool force = dates != null && dates.Force;
-            if (!force && existing.HasValue && existing.Value >= minutes)
+            string newStatus = dates != null ? dates.Status : null;
+            bool statusWinsOverReopen = newStatus == "beaten" || newStatus == "completed";
+
+            // "Voltou a jogar": o site já tem data de conclusão e as horas subiram -> a conclusão deixa de valer.
+            bool reopen = dates != null && dates.ReopenOnReplay && !statusWinsOverReopen
+                          && existing.HasValue && minutes > existing.Value
+                          && !IsNullToken(pick["completedAt"]) && !dates.Completed.HasValue;
+
+            if (!force && string.IsNullOrEmpty(newStatus) && existing.HasValue && existing.Value >= minutes)
             {
                 return new YgpSyncResult
                 {
@@ -2309,11 +2346,17 @@ return out;";
                 };
             }
 
+            // Só mudou o status (horas iguais): nunca reduz as horas que o site já tem.
+            int sendMinutes = minutes;
+            if (!force && existing.HasValue && existing.Value > minutes) sendMinutes = (int)Math.Round(existing.Value);
+
             // Datas: mantém as do site; só preenche o início se estiver vazio e a conclusão se o usuário pediu.
             JToken started = IsNullToken(pick["startedAt"]) ? IsoOrNull(dates != null ? dates.Start : null) : pick["startedAt"].DeepClone();
             JToken completed;
             if (dates != null && dates.Completed.HasValue) completed = IsoOrNull(dates.Completed);
             else completed = IsNullToken(pick["completedAt"]) ? (JToken)JValue.CreateNull() : pick["completedAt"].DeepClone();
+
+            if (reopen) completed = JValue.CreateNull();
 
             JToken rating = IsNullToken(pick["gameRating"]) ? (JToken)JValue.CreateNull() : pick["gameRating"].DeepClone();
 
@@ -2325,7 +2368,7 @@ return out;";
             {
                 { "platform", (string)pick["platform"] ?? "UNVERIFIED" },
                 { "userGameId", userGameId },
-                { "customPlaytimeMinutes", minutes },
+                { "customPlaytimeMinutes", sendMinutes },
                 { "isCompleted", Flag(pick, "isCompleted") },
                 { "isFinished", Flag(pick, "isFinished") },
                 { "isPlaying", Flag(pick, "isPlaying") },
@@ -2340,8 +2383,28 @@ return out;";
                 { "platformPlayed", (string)pick["subPlatform"] ?? targetPlatform }
             };
 
+            if (!string.IsNullOrEmpty(newStatus)) ApplyStatusToPayload(payload, newStatus);
+            else if (reopen) ApplyStatusToPayload(payload, "playing");
+
             var result = await TrpcAdaptiveAsync(updateProc, payload, true, gameId, targetPlatform, minutes, 3);
             AppendDiagnostic($"EDIÇÃO {updateProc} {Trim(result.Input.ToString(Formatting.None), 700)} -> HTTP {result.R.Status} {result.R.Code}: {Trim(result.R.Raw, 600)}");
+
+            // O site recusou o status enviado: as horas valem mais. Tenta de novo mantendo o status que o site já tinha.
+            bool statusDropped = false;
+            if (!result.R.Ok && result.R.Code == "BAD_REQUEST" && !string.IsNullOrEmpty(newStatus))
+            {
+                var keep = (JObject)payload.DeepClone();
+                keep["isCompleted"] = Flag(pick, "isCompleted");
+                keep["isFinished"] = Flag(pick, "isFinished");
+                keep["isPlaying"] = Flag(pick, "isPlaying");
+                keep["isAbandoned"] = Flag(pick, "isAbandoned");
+                keep["isPaused"] = Flag(pick, "isPaused");
+                keep["isBacklog"] = Flag(pick, "isBacklog");
+                result = await TrpcAdaptiveAsync(updateProc, keep, true, gameId, targetPlatform, minutes, 3);
+                AppendDiagnostic($"EDIÇÃO (2ª tentativa, sem mudar o status) {updateProc} {Trim(result.Input.ToString(Formatting.None), 700)} -> HTTP {result.R.Status} {result.R.Code}: {Trim(result.R.Raw, 600)}");
+                statusDropped = true;
+                payload = keep;
+            }
 
             // Erro de datas: as horas são o que importa. Tenta de novo só com as datas que o próprio site já tinha
             // (ou sem datas), para nunca deixar de atualizar o tempo por causa de uma data.
@@ -2370,11 +2433,13 @@ return out;";
                 _editFailures = 0;
                 _logger.Info($"[YGP] Jogo {gameId} atualizado para {minutes}m (site tinha {(existing.HasValue ? existing.Value.ToString("0") : "?")}m) via {updateProc}.");
                 await Task.Delay(250);
+                if (reopen) _logger.Info($"[YGP] Jogo {gameId}: voltou a jogar, data de conclusão removida no site.");
                 return new YgpSyncResult
                 {
                     Success = true,
                     YgpGameId = gameId,
                     TotalPlaytimeMinutes = minutes,
+                    StatusApplied = !string.IsNullOrEmpty(newStatus) && !statusDropped,
                     SiteMinutesBefore = existing.HasValue ? (int?)Math.Round(existing.Value) : null
                 };
             }
@@ -2890,6 +2955,8 @@ return out;";
         public bool Skipped { get; set; }
         /// <summary>O jogo já existe no site mas a atualização das horas não foi aceita.</summary>
         public bool UpdateFailed { get; set; }
+        /// <summary>O status do Playnite foi gravado no site nesta sincronização.</summary>
+        public bool StatusApplied { get; set; }
         /// <summary>Minutos que o site tinha antes da atualização (para mostrar quanto subiu).</summary>
         public int? SiteMinutesBefore { get; set; }
         public int TotalPlaytimeMinutes { get; set; }

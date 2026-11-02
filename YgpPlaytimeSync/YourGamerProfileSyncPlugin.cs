@@ -209,7 +209,7 @@ namespace YgpPlaytimeSync
         /// </summary>
         private void OnDatabaseGamesUpdated(object sender, ItemUpdatedEventArgs<Game> args)
         {
-            if (_settings == null || !_settings.SyncManualPlaytimeEdits || !_settings.IsConnected) return;
+            if (_settings == null || !_settings.IsConnected) return;
 
             try
             {
@@ -218,6 +218,20 @@ namespace YgpPlaytimeSync
                     var oldGame = update.OldData;
                     var newGame = update.NewData;
                     if (oldGame == null || newGame == null) continue;
+
+                    // Status (Jogando, Finalizado, Abandonado...) mudou no Playnite: envia ao YGP na hora.
+                    if (_settings.SyncCompletionStatus && oldGame.CompletionStatusId != newGame.CompletionStatusId && newGame.Playtime >= 60)
+                    {
+                        var st = MapCompletionStatus(newGame);
+                        if (st != null && _gameOptions != null && st != _gameOptions.Get(newGame.Id.ToString()).LastStatusSent)
+                        {
+                            _gameOptions.Update(newGame.Id.ToString(), o => o.ForceResend = true);
+                            _manualEdits[newGame.Id] = 0;
+                            continue;
+                        }
+                    }
+
+                    if (!_settings.SyncManualPlaytimeEdits) continue;
                     if (oldGame.Playtime == newGame.Playtime) continue;
 
                     // Enquanto o jogo roda, o OnGameStopped cuida do envio.
@@ -287,7 +301,7 @@ namespace YgpPlaytimeSync
                         continue;
                     }
 
-                    _logger.Info($"[YGP] Alteração manual de playtime detectada em '{game.Name}': {game.Playtime / 60}m");
+                    _logger.Info($"[YGP] Alteração manual detectada em '{game.Name}' (tempo ou status): {game.Playtime / 60}m");
                     UpsertSnapshotSession(game, true);
                     queued++;
                 }
@@ -350,6 +364,7 @@ namespace YgpPlaytimeSync
             var first = games[0];
             bool startOn = _gameOptions != null && StartDateEnabled(first);
             bool completedOn = _gameOptions != null && _gameOptions.Get(first.Id.ToString()).SetCompletedAtLastPlayed;
+            bool reopenOn = _gameOptions != null && (_gameOptions.Get(first.Id.ToString()).ReopenOnReplay ?? _settings.ReopenOnReplay);
 
             var section = L.T("menu.section");
 
@@ -379,6 +394,14 @@ namespace YgpPlaytimeSync
                 Icon = icon,
                 Description = (completedOn ? "[X] " : "[   ] ") + L.T("menu.completeDate"),
                 Action = a => ToggleCompletionDate(a.Games)
+            };
+
+            yield return new GameMenuItem
+            {
+                MenuSection = section,
+                Icon = icon,
+                Description = (reopenOn ? "[X] " : "[   ] ") + L.T("menu.reopen"),
+                Action = a => ToggleReopen(a.Games)
             };
         }
 
@@ -444,6 +467,21 @@ namespace YgpPlaytimeSync
             }
 
             AfterOptionChange(games, L.T(newValue ? "opt.completeOn" : "opt.completeOff"));
+        }
+
+        private void ToggleReopen(IList<Game> games)
+        {
+            if (_gameOptions == null || games == null || games.Count == 0) return;
+
+            var current = _gameOptions.Get(games[0].Id.ToString()).ReopenOnReplay ?? _settings.ReopenOnReplay;
+            var newValue = !current;
+            foreach (var g in games)
+            {
+                _gameOptions.Update(g.Id.ToString(), o => o.ReopenOnReplay = newValue);
+            }
+
+            // Vale a partir da próxima vez que o jogo for jogado; não precisa reenviar nada agora.
+            NotifyUser(L.T("notify.optionChanged", L.T(newValue ? "opt.reopenOn" : "opt.reopenOff"), games.Count));
         }
 
         private void AfterOptionChange(IList<Game> games, string text)
@@ -554,6 +592,14 @@ namespace YgpPlaytimeSync
                 if (!Guid.TryParse(playniteGameId, out id)) return result;
 
                 var options = _gameOptions != null ? _gameOptions.Get(playniteGameId) : new GameOptions();
+
+                result.ReopenOnReplay = options.ReopenOnReplay ?? _settings.ReopenOnReplay;
+                if (_settings.SyncCompletionStatus)
+                {
+                    var st = MapCompletionStatus(PlayniteApi.Database.Games.Get(id));
+                    if (st != null && st != options.LastStatusSent) result.Status = st;
+                }
+
                 bool sendStart = options.SendStartDate ?? _settings.SendStartDateByDefault;
                 bool sendCompleted = options.SetCompletedAtLastPlayed;
                 if (!sendStart && !sendCompleted && !_settings.AutoCompleteEnabled) return result;
@@ -788,8 +834,67 @@ namespace YgpPlaytimeSync
             if (IsIgnoredByName(g)) return L.T("skip.ignoredList");
             if (_settings.IgnoreSoftware && IsLikelySoftware(g)) return L.T("skip.software");
             var force = _gameOptions != null && _gameOptions.Get(g.Id.ToString()).ForceResend;
+            if (!force && StatusPending(g)) force = true;
             if (!force && _playtimeStore != null && !_playtimeStore.HasIncreased(g.Id.ToString(), ToSeconds(g.Playtime))) return L.T("skip.noIncrease");
             return null;
+        }
+
+        /// <summary>True se o status do Playnite para este jogo ainda não foi enviado ao YGP (ou mudou desde o último envio).</summary>
+        private bool StatusPending(Game g)
+        {
+            if (_settings == null || !_settings.SyncCompletionStatus || _gameOptions == null || g == null) return false;
+            var st = MapCompletionStatus(g);
+            return st != null && st != _gameOptions.Get(g.Id.ToString()).LastStatusSent;
+        }
+
+        private static bool HasAny(string text, params string[] parts)
+        {
+            foreach (var p in parts) if (text.Contains(p)) return true;
+            return false;
+        }
+
+        private static string StripAccents(string s)
+        {
+            var d = (s ?? "").Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder();
+            foreach (var c in d)
+            {
+                if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark) sb.Append(c);
+            }
+            return sb.ToString().ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// Status de conclusão do jogo no Playnite -> status do YGP (playing, beaten, completed, abandoned, onhold, backlog).
+        /// Null = "Não jogado" (padrão do Playnite) ou um status que o plugin não reconhece: nesse caso o status do site não é mexido.
+        /// O nome do status muda com o idioma do Playnite, então o reconhecimento é por palavras (pt/en/es).
+        /// </summary>
+        private string MapCompletionStatus(Game g)
+        {
+            try
+            {
+                if (g == null || g.CompletionStatusId == Guid.Empty) return null;
+                var cs = PlayniteApi.Database.CompletionStatuses.Get(g.CompletionStatusId);
+                if (cs == null || string.IsNullOrWhiteSpace(cs.Name)) return null;
+
+                var n = StripAccents(cs.Name);
+                if (HasAny(n, "not played", "nao jogado", "no jugado", "sin jugar", "unplayed")) return null;
+                if (HasAny(n, "abandon", "desist", "dropped")) return "abandoned";
+                if (HasAny(n, "hold", "espera", "paus", "suspen")) return "onhold";
+                if (HasAny(n, "plan", "backlog", "pendente", "quero", "want", "por jugar")) return "backlog";
+                if (HasAny(n, "playing", "jogando", "jugando")) return "playing";
+                if (HasAny(n, "complet", "100%", "platin")) return "completed";
+                if (HasAny(n, "beaten", "zerad", "finaliz", "termin", "conclu", "finished", "passad")) return "beaten";
+                if (HasAny(n, "played", "jogado", "jugado")) return "playing";
+
+                _logger.Debug($"[YGP] Status '{cs.Name}' não reconhecido; o status do site não será alterado.");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[YGP] Erro ao ler o status do jogo: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>Marca como ignoradas as sessões pendentes/falhas de jogos que hoje não devem ser enviados (apps, lista de ignorados, tempo sem mudança).</summary>
@@ -1265,6 +1370,11 @@ namespace YgpPlaytimeSync
                 try { _gameOptions.Update(id, o => o.ForceResend = false); }
                 catch { }
                 try { RecordAutoCompleted(id); }
+                catch { }
+            };
+            _ygpProvider.OnStatusApplied = (id, status) =>
+            {
+                try { _gameOptions.Update(id, o => o.LastStatusSent = status); }
                 catch { }
             };
             _ygpProvider.PlaytimeResolver = ResolveCurrentPlaytime;
