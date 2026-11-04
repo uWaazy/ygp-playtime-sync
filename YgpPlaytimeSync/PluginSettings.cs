@@ -47,6 +47,15 @@ namespace YgpPlaytimeSync
         /// <summary>Ao voltar a jogar um jogo que já tem data de conclusão no site, remove essa data (cada jogo pode mudar isso no menu).</summary>
         public bool ReopenOnReplay { get; set; } = false;
 
+        /// <summary>Na sincronização da biblioteca inteira, só preenche status e nota que estão vazios no site (não sobrescreve o que você já ajustou lá).</summary>
+        public bool LibrarySyncFillOnly { get; set; } = true;
+
+        /// <summary>Avisa quando existe uma versão nova do plugin no GitHub (consulta anônima, uma vez por abertura do Playnite).</summary>
+        public bool CheckForUpdates { get; set; } = true;
+
+        /// <summary>Última versão nova sobre a qual o usuário já foi avisado (para não repetir o aviso).</summary>
+        public string LastUpdateNotified { get; set; } = "";
+
         // --- Dados da Conta Real (Your Gamer Profile) ---
         public bool IsConnected { get; set; } = false;
         public string Username { get; set; } = "";

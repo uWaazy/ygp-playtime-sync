@@ -32,6 +32,9 @@ namespace YgpPlaytimeSync
 
         /// <summary>Ao voltar a jogar um jogo que já tem data de conclusão no site, remove essa data.</summary>
         public bool ReopenOnReplay { get; set; }
+
+        /// <summary>Protege o site: não sobrescreve status nem nota que o site já tem (usado na sincronização da biblioteca inteira).</summary>
+        public bool FillOnly { get; set; }
     }
 
     /// <summary>Opções do plugin escolhidas pelo usuário para UM jogo (menu "YGP: Settings").</summary>
@@ -60,6 +63,9 @@ namespace YgpPlaytimeSync
 
         /// <summary>O jogo acabou de virar favorito: a próxima sincronização envia 5 estrelas.</summary>
         public bool PendingFavoriteRating { get; set; }
+
+        /// <summary>Houve uma sessão de jogo de verdade (aberta pelo Playnite) ainda não enviada. Só isso permite "reabrir" o jogo no site.</summary>
+        public bool ReplayPending { get; set; }
     }
 
     public class GameOptionsStore
@@ -94,7 +100,7 @@ namespace YgpPlaytimeSync
             {
                 GameOptions o;
                 if (!_items.TryGetValue(gameId, out o)) return new GameOptions();
-                return new GameOptions { SendStartDate = o.SendStartDate, SetCompletedAtLastPlayed = o.SetCompletedAtLastPlayed, ForceResend = o.ForceResend, AutoCompletedFor = o.AutoCompletedFor, ReopenOnReplay = o.ReopenOnReplay, LastStatusSent = o.LastStatusSent, LastRatingSent = o.LastRatingSent, PendingFavoriteRating = o.PendingFavoriteRating };
+                return new GameOptions { SendStartDate = o.SendStartDate, SetCompletedAtLastPlayed = o.SetCompletedAtLastPlayed, ForceResend = o.ForceResend, AutoCompletedFor = o.AutoCompletedFor, ReopenOnReplay = o.ReopenOnReplay, LastStatusSent = o.LastStatusSent, LastRatingSent = o.LastRatingSent, PendingFavoriteRating = o.PendingFavoriteRating, ReplayPending = o.ReplayPending };
             }
         }
 

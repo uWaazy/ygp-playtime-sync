@@ -216,6 +216,12 @@ namespace YgpPlaytimeSync
             AddCheckBox(L.T("opt.favFive"), L.T("opt.favFive.desc"),
                 _settings.FavoriteGivesFiveStars, v => _settings.FavoriteGivesFiveStars = v);
 
+            AddCheckBox(L.T("opt.libFill"), L.T("opt.libFill.desc"),
+                _settings.LibrarySyncFillOnly, v => _settings.LibrarySyncFillOnly = v);
+
+            AddCheckBox(L.T("opt.updates"), L.T("opt.updates.desc"),
+                _settings.CheckForUpdates, v => _settings.CheckForUpdates = v);
+
             AddCheckBox(L.T("opt.notify"), L.T("opt.notify.desc"),
                 _settings.ShowSyncNotifications, v => _settings.ShowSyncNotifications = v);
 

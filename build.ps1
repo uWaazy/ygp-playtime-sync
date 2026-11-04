@@ -234,6 +234,15 @@ try {
     Write-Host "PEXT     : $pext"
     Add-Content $Log "PEXT=$pext"
 
+    # Copy for the GitHub release: the "Release" workflow publishes release\ygp-playtime-sync-v<version>.pext
+    $RelDir = Join-Path $Root "release"
+    New-Item $RelDir -ItemType Directory -Force | Out-Null
+    Get-ChildItem $RelDir -Filter *.pext -ErrorAction SilentlyContinue | Remove-Item -Force
+    Copy-Item $pext $RelDir -Force
+    $sha = (Get-FileHash (Join-Path $RelDir (Split-Path $pext -Leaf)) -Algorithm SHA256).Hash.ToLower()
+    Write-Host "SHA-256  : $sha"
+    Add-Content $Log "SHA256=$sha"
+
     Write-Host ""
     Write-Host "BUILD OK" -ForegroundColor Green
     Write-Host "Output: $Out"

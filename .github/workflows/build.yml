@@ -1,0 +1,36 @@
+name: Build
+
+# Compila o plugin a cada push/PR para pegar erro de C# antes de empacotar.
+on:
+  push:
+    branches: [main]
+    paths: ["YgpPlaytimeSync/**", "YgpPlaytimeSync.Tests/**", "*.sln", ".github/workflows/build.yml"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Get Playnite SDK (NuGet)
+        shell: pwsh
+        run: |
+          nuget install PlayniteSDK -OutputDirectory sdk -NonInteractive
+          $dll = Get-ChildItem sdk -Recurse -Filter Playnite.SDK.dll | Where-Object { $_.FullName -match 'net4' } | Select-Object -First 1
+          if (-not $dll) { $dll = Get-ChildItem sdk -Recurse -Filter Playnite.SDK.dll | Select-Object -First 1 }
+          if (-not $dll) { throw "Playnite.SDK.dll not found in the NuGet package" }
+          "SDK_DLL=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using $($dll.FullName)"
+
+      - name: Build plugin
+        run: dotnet build YgpPlaytimeSync/YgpPlaytimeSync.csproj -c Release -p:PlayniteSdkPath="$env:SDK_DLL"
+
+      - name: Tests
+        run: dotnet test YgpPlaytimeSync.Tests -c Release -p:PlayniteSdkPath="$env:SDK_DLL"
+        continue-on-error: true

@@ -1,0 +1,105 @@
+name: Release
+
+# Runs when you push (VS Code "Sync") a change to CHANGELOG.md or to release/*.pext.
+# It publishes only if: the newest CHANGELOG version has its .pext in release/ and no release exists yet.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "CHANGELOG.md"
+      - "release/*.pext"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from CHANGELOG.md
+        id: ver
+        run: |
+          set -euo pipefail
+          HEADER=$(grep -m1 -E '^##[[:space:]]+' CHANGELOG.md | sed -E 's/^##[[:space:]]+//; s/^\[//; s/\].*$//; s/[[:space:]].*$//')
+          VER=$(echo "$HEADER" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+          if [ -z "$VER" ]; then echo "::error::No '## x.y.z' section found in CHANGELOG.md"; exit 1; fi
+          echo "title=v$HEADER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          case "$HEADER" in *beta*|*alpha*|*rc*) echo "pre=true" >> "$GITHUB_OUTPUT";; *) echo "pre=false" >> "$GITHUB_OUTPUT";; esac
+          PEXT="release/ygp-playtime-sync-v$VER.pext"
+          echo "pext=$PEXT" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" >/dev/null 2>&1; then
+            echo "::notice::Release v$VER already exists - nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ ! -f "$PEXT" ]; then
+            echo "::notice::$PEXT not found yet - run package.bat and push it. Nothing published."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build release notes
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          PEXT: ${{ steps.ver.outputs.pext }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          BODY=$(awk '/^##[[:space:]]/{n++; next} n==1' CHANGELOG.md | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
+          SHA=$(sha256sum "$PEXT" | cut -d' ' -f1)
+          {
+            echo "$BODY"
+            echo
+            PREV=$(git tag --list 'v*' --sort=-v:refname | grep -vx "$TAG" | head -n1 || true)
+            RANGE="HEAD"; [ -n "$PREV" ] && RANGE="$PREV..HEAD"
+            echo "### What's Changed"
+            echo
+            git log $RANGE --no-merges --pretty=format:"- %s ([\`%h\`]($SERVER/$REPO/commit/%H))" \
+              | grep -viE '^- (chore: release|docs: changelog)' || true
+            echo
+            echo
+            echo "### Security"
+            echo
+            if echo "$BODY" | grep -qiE 'sha-?256'; then
+              USER_SHA=$(echo "$BODY" | grep -oiE '[0-9a-f]{64}' | head -n1 | tr 'A-F' 'a-f')
+              if [ "$USER_SHA" != "$SHA" ]; then
+                echo "::error::SHA-256 in CHANGELOG.md ($USER_SHA) does not match $PEXT ($SHA). You scanned a different file."
+                exit 1
+              fi
+            fi
+            echo "- SHA-256: $SHA"
+            echo "- Report: https://www.virustotal.com/gui/file/$SHA?nocache=1"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "**Full Changelog**: $SERVER/$REPO/compare/$PREV...$TAG"
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Create tag and release
+        if: steps.ver.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          TITLE: ${{ steps.ver.outputs.title }}
+          PEXT: ${{ steps.ver.outputs.pext }}
+          PRE: ${{ steps.ver.outputs.pre }}
+        run: |
+          set -euo pipefail
+          FLAGS="--latest"
+          [ "$PRE" = "true" ] && FLAGS="--prerelease"
+          gh release create "$TAG" "$PEXT" --target "$GITHUB_SHA" --title "$TITLE" --notes-file notes.md $FLAGS

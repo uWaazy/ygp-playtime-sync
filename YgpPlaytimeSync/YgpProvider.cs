@@ -46,6 +46,9 @@ namespace YgpPlaytimeSync
         /// <summary>Chamado quando a avaliação (estrelas) foi gravada no site (id do jogo no Playnite, estrelas).</summary>
         public Action<string, double> OnRatingApplied { get; set; }
 
+        /// <summary>Chamado quando o modo "só preencher" preservou um status ou nota que o site já tinha.</summary>
+        public Action OnSiteValueKept { get; set; }
+
         public Task<string> LearnFromSiteAsync()
         {
             return _apiClient.LearnFromSiteAsync();
@@ -242,6 +245,18 @@ namespace YgpPlaytimeSync
                 {
                     session.SyncedRating = dates.Rating;
                     try { OnRatingApplied?.Invoke(session.PlayniteGameId, dates.Rating.Value); } catch { }
+                }
+
+                // Modo "só preencher": o site já tinha o valor; marca como tratado para um envio futuro não sobrescrevê-lo.
+                if (result.StatusKeptBySite && !string.IsNullOrEmpty(dates.Status))
+                {
+                    try { OnStatusApplied?.Invoke(session.PlayniteGameId, dates.Status); } catch { }
+                    try { OnSiteValueKept?.Invoke(); } catch { }
+                }
+                if (result.RatingKeptBySite && dates.Rating.HasValue)
+                {
+                    try { OnRatingApplied?.Invoke(session.PlayniteGameId, dates.Rating.Value); } catch { }
+                    try { OnSiteValueKept?.Invoke(); } catch { }
                 }
 
                 // Se o site recusou a atualização, NÃO registra: assim o jogo é tentado de novo na próxima sincronização.

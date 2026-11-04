@@ -1,0 +1,22 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - duplicate
+      - invalid
+      - wontfix
+    authors:
+      - dependabot
+  categories:
+    - title: "🚀 New features"
+      labels: [enhancement, feature]
+    - title: "🐛 Bug fixes"
+      labels: [bug, fix]
+    - title: "🔒 Security"
+      labels: [security]
+    - title: "📚 Documentation"
+      labels: [documentation, docs]
+    - title: "🔧 Maintenance"
+      labels: [maintenance, refactor, chore]
+    - title: "Other changes"
+      labels: ["*"]

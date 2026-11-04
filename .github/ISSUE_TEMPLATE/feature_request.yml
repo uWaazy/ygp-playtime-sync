@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a new feature or an improvement
+title: "[FEATURE] "
+labels: ["enhancement"]
+type: Feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What are you trying to do that is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Mention where it would appear (settings, game menu, notification...).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: api
+    attributes:
+      label: Does it need something new on the YGP site/API?
+      description: Some ideas (e.g. achievements) depend on YGP exposing a route.
+      options:
+        - I don't know
+        - No, it uses what already exists
+        - Yes
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links, examples.

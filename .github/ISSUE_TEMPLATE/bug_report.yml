@@ -1,0 +1,112 @@
+name: Bug report
+description: Something is not syncing, syncing wrongly, or the plugin misbehaves
+title: "[BUG] "
+labels: ["bug", "needs-triage"]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in as much as you can. Reports in English, Português (BR) or Español are all welcome.
+        **Never paste your YGP cookies, tokens or session data.** Logs from the plugin are already safe to share.
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Plugin version
+      description: Playnite → Add-ons → Extensions → Your Gamer Profile Sync (Beta).
+      placeholder: "0.5.2-beta"
+    validations:
+      required: true
+  - type: input
+    id: playnite_version
+    attributes:
+      label: Playnite version
+      placeholder: "10.x"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Playnite mode
+      options:
+        - Desktop
+        - Fullscreen
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is affected?
+      options:
+        - Playtime sync
+        - Completion status
+        - Rating (stars / favorite)
+        - Start / completion dates
+        - Adding a game (not found / duplicate / 409)
+        - Login / session
+        - Notifications
+        - Settings / UI
+        - Installation / update
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game and library source
+      description: Name of the game and where it comes from (Steam, Epic, GOG, manual, Local Achievements...).
+      placeholder: "War Thunder (Steam)"
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines
+      description: Open `extensions.log` (Playnite → Menu → Open Playnite config folder) and paste the lines starting with `[YGP]` around the time of the problem.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnostic file (optional)
+      description: If you generated `ygp-diagnostico.txt`, paste it here or attach it. Remove any personal data first.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Did it work in an earlier version?
+      options:
+        - I don't know
+        - No, never worked
+        - Yes (say which version in the description)
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am on the latest release (or I say why not).
+          required: true
+        - label: I did not paste cookies, tokens or other private data.
+          required: true

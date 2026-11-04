@@ -160,6 +160,12 @@ namespace YgpPlaytimeSync
 
                 if (_playDates != null) _playDates.RecordSession(game.Id.ToString(), DateTime.UtcNow);
 
+                // Sessão real de pelo menos 1 minuto: só ela permite "reabrir" o jogo no site.
+                if (elapsedSeconds >= 60 && _gameOptions != null)
+                {
+                    try { _gameOptions.Update(game.Id.ToString(), o => o.ReplayPending = true); } catch { }
+                }
+
                 // Sincronização automática: só quando a sessão durou pelo menos 1 minuto.
                 if (elapsedSeconds < 60)
                 {
@@ -351,6 +357,9 @@ namespace YgpPlaytimeSync
             {
                 _logger.Info("[YGP] Playnite iniciado.");
 
+                // Avisa se existe uma versão nova no GitHub (uma vez por versão; pode ser desligado nas configurações).
+                Task.Run(CheckForUpdateAsync);
+
                 // Envia pendências acumuladas, mas só depois que o Playnite terminou de abrir (não atrasa a inicialização).
                 Task.Run(async () =>
                 {
@@ -375,6 +384,38 @@ namespace YgpPlaytimeSync
             catch (Exception ex)
             {
                 _logger.Error(ex, $"[YGP] Erro em OnApplicationStarted: {ex.Message}");
+            }
+        }
+
+        private async Task CheckForUpdateAsync()
+        {
+            try
+            {
+                if (_settings == null || !_settings.CheckForUpdates) return;
+                await Task.Delay(TimeSpan.FromSeconds(20));
+
+                var current = typeof(YourGamerProfileSyncPlugin).Assembly.GetName().Version;
+                var update = await UpdateChecker.CheckAsync(current);
+                if (update == null) return;
+                if (string.Equals(_settings.LastUpdateNotified, update.Version, StringComparison.Ordinal)) return;
+
+                _settings.LastUpdateNotified = update.Version;
+                PersistSettingsQuietly();
+
+                var url = update.Url;
+                PlayniteApi.Notifications.Add(new NotificationMessage(
+                    "ygp-update-" + update.Version,
+                    L.T("update.available", update.Version, current.ToString(3)),
+                    NotificationType.Info,
+                    () =>
+                    {
+                        try { System.Diagnostics.Process.Start(url); } catch { }
+                    }));
+                _logger.Info($"[YGP] Nova versão disponível: {update.Version} (atual {current.ToString(3)}).");
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[YGP] Não foi possível verificar atualização: {ex.Message}");
             }
         }
 
@@ -621,7 +662,9 @@ namespace YgpPlaytimeSync
 
                 var options = _gameOptions != null ? _gameOptions.Get(playniteGameId) : new GameOptions();
 
-                result.ReopenOnReplay = options.ReopenOnReplay ?? _settings.ReopenOnReplay;
+                // Só reabre se houve uma sessão de verdade no Playnite (horas importadas ou editadas não contam).
+                result.ReopenOnReplay = (options.ReopenOnReplay ?? _settings.ReopenOnReplay) && options.ReplayPending;
+                result.FillOnly = _fillOnlySync;
                 var gameForExtras = PlayniteApi.Database.Games.Get(id);
                 if (_settings.SyncCompletionStatus)
                 {
@@ -1244,6 +1287,9 @@ namespace YgpPlaytimeSync
         /// Envia o tempo de jogo dos jogos informados (ou da biblioteca inteira, quando null) com barra de progresso.
         /// Serve tanto para sincronizar os jogos antigos quanto para o menu de contexto.
         /// </summary>
+        private volatile bool _fillOnlySync;
+        private int _keptBySite;
+
         public void SyncLibraryWithProgress(IList<Game> games)
         {
             if (_syncQueue == null || _sessionStorage == null || _ygpProvider == null)
@@ -1296,10 +1342,14 @@ namespace YgpPlaytimeSync
                 return;
             }
 
-            if (list.Count > 25)
+            // Biblioteca inteira: mostra sempre como o envio vai tratar status e nota que o site já tem.
+            bool wholeLibrary = games == null;
+            bool fillOnly = wholeLibrary && _settings.LibrarySyncFillOnly;
+            if (wholeLibrary || list.Count > 25)
             {
+                var modeText = wholeLibrary ? "\n\n" + L.T(fillOnly ? "lib.modeFill" : "lib.modeOverwrite") : "";
                 var answer = PlayniteApi.Dialogs.ShowMessage(
-                    L.T("lib.confirm", list.Count) + skippedText,
+                    L.T("lib.confirm", list.Count) + modeText + skippedText,
                     L.T("app.name"),
                     MessageBoxButton.YesNo);
                 if (answer != MessageBoxResult.Yes) return;
@@ -1313,25 +1363,35 @@ namespace YgpPlaytimeSync
             _sessionStorage.RequeueFailed();
 
             SyncResult result = null;
-            PlayniteApi.Dialogs.ActivateGlobalProgress(a =>
+            _keptBySite = 0;
+            _fillOnlySync = fillOnly;
+            try
             {
-                a.Text = L.T("lib.progress");
-                result = Task.Run(() => _syncQueue.ProcessQueueAsync(
-                    _ygpProvider,
-                    int.MaxValue,
-                    (done, total, name) =>
-                    {
-                        a.ProgressMaxValue = total;
-                        a.CurrentProgressValue = done;
-                        a.Text = $"({done}/{total}) {name}";
-                    },
-                    a.CancelToken,
-                    true)).GetAwaiter().GetResult();
-            }, new GlobalProgressOptions(L.T("lib.progressTitle"), true));
+                PlayniteApi.Dialogs.ActivateGlobalProgress(a =>
+                {
+                    a.Text = L.T("lib.progress");
+                    result = Task.Run(() => _syncQueue.ProcessQueueAsync(
+                        _ygpProvider,
+                        int.MaxValue,
+                        (done, total, name) =>
+                        {
+                            a.ProgressMaxValue = total;
+                            a.CurrentProgressValue = done;
+                            a.Text = $"({done}/{total}) {name}";
+                        },
+                        a.CancelToken,
+                        true)).GetAwaiter().GetResult();
+                }, new GlobalProgressOptions(L.T("lib.progressTitle"), true));
+            }
+            finally
+            {
+                _fillOnlySync = false;
+            }
 
             RecordResult(result);
+            var keptText = fillOnly && _keptBySite > 0 ? "\n" + L.T("lib.kept", _keptBySite) : "";
             var generalText = _playtimeStore != null ? "\n" + L.T("lib.general", FormatMinutes(_playtimeStore.TotalMinutes())) : "";
-            PlayniteApi.Dialogs.ShowMessage(BuildResultMessage(result) + generalText + skippedText, L.T("app.name"));
+            PlayniteApi.Dialogs.ShowMessage(BuildResultMessage(result) + keptText + generalText + skippedText, L.T("app.name"));
         }
 
         private async Task TestConnectionAsync()
@@ -1460,7 +1520,7 @@ namespace YgpPlaytimeSync
             _ygpProvider.DatesResolver = ResolveDates;
             _ygpProvider.OnGameSynced = id =>
             {
-                try { _gameOptions.Update(id, o => o.ForceResend = false); }
+                try { _gameOptions.Update(id, o => { o.ForceResend = false; o.ReplayPending = false; }); }
                 catch { }
                 try { RecordAutoCompleted(id); }
                 catch { }
@@ -1475,6 +1535,7 @@ namespace YgpPlaytimeSync
                 try { _gameOptions.Update(id, o => { o.LastRatingSent = stars; o.PendingFavoriteRating = false; }); }
                 catch { }
             };
+            _ygpProvider.OnSiteValueKept = () => System.Threading.Interlocked.Increment(ref _keptBySite);
             _ygpProvider.PlaytimeResolver = ResolveCurrentPlaytime;
             _ygpProvider.SettingsChanged = PersistSettingsQuietly;
             _ygpProvider.DiagnosticsDirectory = _dataPath;
