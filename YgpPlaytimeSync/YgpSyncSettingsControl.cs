@@ -33,6 +33,10 @@ namespace YgpPlaytimeSync
         private System.Windows.Documents.Run _lastGameText;
         private string _lastGameUrl;
         private string _loadedAvatarUrl;
+        private AvatarFrames _avatarFrames;
+        private ImageBrush _avatarBrush;
+        private System.Windows.Threading.DispatcherTimer _avatarTimer;
+        private int _avatarFrameIndex;
 
         private bool _buildingLanguageBox;
 
@@ -43,6 +47,10 @@ namespace YgpPlaytimeSync
 
             _mainPanel = new StackPanel { Margin = new Thickness(15) };
             Content = new ScrollViewer { Content = _mainPanel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+
+            // O GIF só anima enquanto a tela está visível.
+            Unloaded += (s, e) => StopAvatarAnimation();
+            Loaded += (s, e) => StartAvatarAnimation();
 
             BuildUI();
         }
@@ -595,6 +603,9 @@ namespace YgpPlaytimeSync
                 Fill = new SolidColorBrush(Color.FromRgb(0x33, 0x41, 0x55))
             };
             _loadedAvatarUrl = null;
+            StopAvatarAnimation();
+            _avatarFrames = null;
+            _avatarBrush = null;
             _avatarInitial = new TextBlock
             {
                 Text = CreatorProfileService.Username.Substring(0, 1).ToUpperInvariant(),
@@ -755,45 +766,80 @@ namespace YgpPlaytimeSync
             _lastGameLink.IsEnabled = !string.IsNullOrWhiteSpace(info.LastGameUrl);
         }
 
-        private void LoadAvatar(string url)
+        private async void LoadAvatar(string url)
         {
-            try
+            var service = _plugin.CreatorProfile;
+            if (service == null || string.IsNullOrWhiteSpace(url)) return;
+
+            // Até 3 tentativas (a rede pode demorar na primeira abertura); o arquivo guardado em disco responde na hora.
+            for (int attempt = 0; attempt < 3; attempt++)
             {
-                if (string.IsNullOrWhiteSpace(url)) return;
-
-                url = url.Trim();
-                if (url.StartsWith("//", StringComparison.Ordinal)) url = "https:" + url;
-                else if (url.StartsWith("/", StringComparison.Ordinal)) url = SiteUrl + url;
-
-                Uri uri;
-                if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)) return;
-
-                var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bitmap.DecodePixelWidth = 96;
-                bitmap.UriSource = uri;
-                bitmap.EndInit();
-
-                Action apply = () =>
+                try
                 {
-                    _avatarCircle.Fill = new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
-                    _avatarInitial.Text = "";
-                };
+                    var bytes = await service.GetAvatarBytesAsync(url);
+                    if (url != _loadedAvatarUrl) return; // o endereço mudou ou a tela foi reconstruída
 
-                if (bitmap.IsDownloading)
-                {
-                    bitmap.DownloadCompleted += (s, e) => apply();
+                    if (bytes != null)
+                    {
+                        var frames = AvatarDecoder.Decode(bytes, 96);
+                        if (frames != null && frames.Frames.Count > 0)
+                        {
+                            ShowAvatar(frames);
+                            return;
+                        }
+                    }
                 }
-                else
+                catch
                 {
-                    apply();
+                    // tenta de novo
                 }
+
+                await Task.Delay(4000);
+                if (url != _loadedAvatarUrl) return;
             }
-            catch
+
+            // Não deu: libera para tentar de novo na próxima atualização do cartão.
+            if (url == _loadedAvatarUrl) _loadedAvatarUrl = null;
+        }
+
+        private void ShowAvatar(AvatarFrames frames)
+        {
+            if (_avatarCircle == null) return;
+
+            StopAvatarAnimation();
+            _avatarFrames = frames;
+            _avatarFrameIndex = 0;
+            _avatarBrush = new ImageBrush(frames.Frames[0]) { Stretch = Stretch.UniformToFill };
+            _avatarCircle.Fill = _avatarBrush;
+            _avatarInitial.Text = "";
+
+            if (frames.IsAnimated && IsLoaded) StartAvatarAnimation();
+        }
+
+        private void StartAvatarAnimation()
+        {
+            if (_avatarFrames == null || !_avatarFrames.IsAnimated || _avatarBrush == null) return;
+            if (_avatarTimer != null) return;
+
+            _avatarTimer = new System.Windows.Threading.DispatcherTimer();
+            _avatarTimer.Interval = TimeSpan.FromMilliseconds(_avatarFrames.DelaysMs[_avatarFrameIndex]);
+            _avatarTimer.Tick += (s, e) =>
             {
-                // sem avatar: continua mostrando a inicial do nome
-            }
+                var timer = s as System.Windows.Threading.DispatcherTimer;
+                var frames = _avatarFrames;
+                if (timer == null || frames == null || _avatarBrush == null) return;
+                _avatarFrameIndex = (_avatarFrameIndex + 1) % frames.Frames.Count;
+                _avatarBrush.ImageSource = frames.Frames[_avatarFrameIndex];
+                timer.Interval = TimeSpan.FromMilliseconds(frames.DelaysMs[_avatarFrameIndex]);
+            };
+            _avatarTimer.Start();
+        }
+
+        private void StopAvatarAnimation()
+        {
+            if (_avatarTimer == null) return;
+            _avatarTimer.Stop();
+            _avatarTimer = null;
         }
 
         // ------------------------------------------------------------------ atualizações de tela

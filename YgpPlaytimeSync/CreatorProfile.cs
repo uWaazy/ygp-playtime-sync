@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -63,6 +64,10 @@ namespace YgpPlaytimeSync
         private readonly IPlayniteAPI _api;
         private readonly ILogger _logger;
         private readonly string _file;
+        private readonly string _avatarFile;
+        private readonly string _avatarUrlFile;
+        private const string SiteUrl = "https://yourgamerprofile.com";
+        private static readonly SemaphoreSlim _avatarGate = new SemaphoreSlim(1, 1);
         private readonly object _lock = new object();
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
         private CreatorProfileInfo _info = new CreatorProfileInfo();
@@ -73,6 +78,8 @@ namespace YgpPlaytimeSync
             _api = api;
             _logger = logger;
             _file = string.IsNullOrEmpty(dataPath) ? null : Path.Combine(dataPath, "ygp-creator.json");
+            _avatarFile = string.IsNullOrEmpty(dataPath) ? null : Path.Combine(dataPath, "ygp-creator-avatar.bin");
+            _avatarUrlFile = string.IsNullOrEmpty(dataPath) ? null : Path.Combine(dataPath, "ygp-creator-avatar.url");
 
             try
             {
@@ -107,7 +114,8 @@ namespace YgpPlaytimeSync
 
         public async Task RefreshAsync(bool force)
         {
-            if (!await _gate.WaitAsync(0)) return;
+            // Se já existe uma atualização em andamento, espera por ela (a tela de configurações precisa do resultado).
+            if (!await _gate.WaitAsync(TimeSpan.FromSeconds(45))) return;
 
             try
             {
@@ -143,6 +151,116 @@ namespace YgpPlaytimeSync
             finally
             {
                 _gate.Release();
+            }
+        }
+
+        /// <summary>
+        /// Endereço real da imagem do avatar: tira o redimensionador do site (/_next/image?url=...), que devolve
+        /// só o primeiro quadro de um GIF, e completa endereços relativos.
+        /// </summary>
+        public static string NormalizeAvatarUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            url = url.Trim();
+
+            try
+            {
+                if (url.StartsWith("//", StringComparison.Ordinal)) url = "https:" + url;
+                else if (url.StartsWith("/", StringComparison.Ordinal)) url = SiteUrl + url;
+
+                Uri uri;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out uri)) return null;
+
+                if (uri.AbsolutePath.IndexOf("/_next/image", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    foreach (var part in uri.Query.TrimStart('?').Split('&'))
+                    {
+                        var eq = part.IndexOf('=');
+                        if (eq <= 0 || !part.Substring(0, eq).Equals("url", StringComparison.OrdinalIgnoreCase)) continue;
+                        var inner = Uri.UnescapeDataString(part.Substring(eq + 1));
+                        if (inner.StartsWith("//", StringComparison.Ordinal)) inner = "https:" + inner;
+                        else if (inner.StartsWith("/", StringComparison.Ordinal)) inner = uri.GetLeftPart(UriPartial.Authority) + inner;
+                        Uri innerUri;
+                        if (Uri.TryCreate(inner, UriKind.Absolute, out innerUri)) uri = innerUri;
+                        break;
+                    }
+                }
+
+                if (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp) return null;
+                return uri.AbsoluteUri;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Bytes da imagem do avatar. Usa o arquivo guardado em disco (abre na hora) e só baixa de novo quando o
+        /// endereço muda; se o download falhar, devolve o que já estava guardado (ou null).
+        /// </summary>
+        public async Task<byte[]> GetAvatarBytesAsync(string url)
+        {
+            var normalized = NormalizeAvatarUrl(url);
+            if (normalized == null) return null;
+
+            await _avatarGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                byte[] cached = null;
+                string cachedUrl = null;
+                try
+                {
+                    if (_avatarFile != null && File.Exists(_avatarFile))
+                    {
+                        cached = File.ReadAllBytes(_avatarFile);
+                        if (_avatarUrlFile != null && File.Exists(_avatarUrlFile)) cachedUrl = File.ReadAllText(_avatarUrlFile).Trim();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug($"[YGP] Avatar guardado ilegível: {ex.Message}");
+                    cached = null;
+                }
+
+                if (cached != null && cached.Length > 0 && string.Equals(cachedUrl, normalized, StringComparison.Ordinal)) return cached;
+
+                try
+                {
+                    using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) })
+                    {
+                        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) YgpPlaytimeSync");
+                        http.DefaultRequestHeaders.Accept.ParseAdd("image/gif,image/png,image/jpeg,image/*;q=0.8");
+                        var bytes = await http.GetByteArrayAsync(normalized).ConfigureAwait(false);
+                        if (bytes != null && bytes.Length > 0 && bytes.Length <= 8 * 1024 * 1024)
+                        {
+                            try
+                            {
+                                if (_avatarFile != null)
+                                {
+                                    Directory.CreateDirectory(Path.GetDirectoryName(_avatarFile));
+                                    File.WriteAllBytes(_avatarFile, bytes);
+                                    File.WriteAllText(_avatarUrlFile, normalized);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Debug($"[YGP] Não foi possível guardar o avatar: {ex.Message}");
+                            }
+                            return bytes;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug($"[YGP] Falha ao baixar o avatar do criador: {ex.Message}");
+                }
+
+                return cached != null && cached.Length > 0 ? cached : null;
+            }
+            finally
+            {
+                _avatarGate.Release();
             }
         }
 
